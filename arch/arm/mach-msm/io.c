@@ -300,6 +300,7 @@ void __init msm_map_apq8064_io(void)
 static struct map_desc msm_8974_io_desc[] __initdata = {
 	MSM_CHIP_DEVICE(QGIC_DIST, MSM8974),
 	MSM_CHIP_DEVICE(QGIC_CPU, MSM8974),
+	MSM_CHIP_DEVICE(APCS_GCC, MSM8974),
 	MSM_CHIP_DEVICE(TLMM, MSM8974),
 	MSM_CHIP_DEVICE(MPM2_PSHOLD, MSM8974),
 	{
@@ -551,6 +552,7 @@ void __init msm_map_msmkrypton_io(void)
 static struct map_desc mpq8092_io_desc[] __initdata = {
 	MSM_CHIP_DEVICE(QGIC_DIST, MPQ8092),
 	MSM_CHIP_DEVICE(QGIC_CPU, MPQ8092),
+	MSM_CHIP_DEVICE(APCS_GCC, MPQ8092),
 	MSM_CHIP_DEVICE(TLMM, MPQ8092),
 	{
 		.virtual =  (unsigned long) MSM_SHARED_RAM_BASE,
@@ -599,7 +601,6 @@ void __init msm_map_msm8226_io(void)
 #ifdef CONFIG_ARCH_MSM8610
 static struct map_desc msm8610_io_desc[] __initdata = {
 	MSM_CHIP_DEVICE(QGIC_DIST, MSM8610),
-	MSM_CHIP_DEVICE(QGIC_CPU, MSM8610),
 	MSM_CHIP_DEVICE(APCS_GCC, MSM8610),
 	MSM_CHIP_DEVICE(TLMM, MSM8610),
 	MSM_CHIP_DEVICE(MPM2_PSHOLD, MSM8610),

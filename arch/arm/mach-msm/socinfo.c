@@ -21,16 +21,13 @@
 #include <linux/sys_soc.h>
 #include <linux/slab.h>
 #include <linux/stat.h>
-#include <linux/string.h>
 #include <linux/sysdev.h>
 #include <linux/types.h>
 
 #include <asm/mach-types.h>
-#include <asm/system_misc.h>
 
 #include <mach/socinfo.h>
 #include <mach/msm_smem.h>
-#include <mach/cpufreq.h>
 
 #include "boot_stats.h"
 
@@ -39,11 +36,16 @@
 #define SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE 128
 #define SMEM_IMAGE_VERSION_SIZE 4096
 #define SMEM_IMAGE_VERSION_NAME_SIZE 75
+#define SMEM_IMAGE_VERSION_NAME_OFFSET 3
 #define SMEM_IMAGE_VERSION_VARIANT_SIZE 20
 #define SMEM_IMAGE_VERSION_VARIANT_OFFSET 75
 #define SMEM_IMAGE_VERSION_OEM_SIZE 32
 #define SMEM_IMAGE_VERSION_OEM_OFFSET 96
-#define SMEM_IMAGE_VERSION_PARTITION_APPS 10
+
+#ifdef CONFIG_MACH_LGE
+extern int g_speed_bin;
+extern int g_pvs_bin;
+#endif
 
 enum {
 	HW_PLATFORM_UNKNOWN = 0,
@@ -78,7 +80,7 @@ const char *hw_platform[] = {
 };
 
 #ifdef CONFIG_MACH_LGE
-/*                 */
+/* LGE platform id */
 enum {
 	HW_PLATFORM_LGE_START   = 100,
 	HW_PLATFORM_LGPS11      = 100,
@@ -97,7 +99,6 @@ enum {
 	HW_PLATFORM_Z_KR	= 130,
 	HW_PLATFORM_VU3_KR      = 144,
 	HW_PLATFORM_G2_KDDI	   = 150,
-        HW_PLATFORM_B1_KR       = 177,
 	HW_PLATFORM_LGE_INVALID
 };
 
@@ -118,31 +119,12 @@ const char *hw_platform_lge[] = {
 	[HW_PLATFORM_Z_KR - HW_PLATFORM_LGE_START] 	  = "Z_KR",
 	[HW_PLATFORM_VU3_KR - HW_PLATFORM_LGE_START] 	  = "VU3_KR",
 	[HW_PLATFORM_G2_KDDI - HW_PLATFORM_LGE_START] 	= "G2_KDDI",
-        [HW_PLATFORM_B1_KR - HW_PLATFORM_LGE_START]       = "B1_KR",
 };
 #endif
 
 enum {
 	ACCESSORY_CHIP_UNKNOWN = 0,
 	ACCESSORY_CHIP_CHARM = 58,
-};
-
-enum {
-	PLATFORM_SUBTYPE_QRD = 0x0,
-	PLATFORM_SUBTYPE_SKUAA = 0x1,
-	PLATFORM_SUBTYPE_SKUF = 0x2,
-	PLATFORM_SUBTYPE_SKUAB = 0x3,
-	PLATFORM_SUBTYPE_SKUG = 0x5,
-	PLATFORM_SUBTYPE_QRD_INVALID,
-};
-
-const char *qrd_hw_platform_subtype[] = {
-	[PLATFORM_SUBTYPE_QRD] = "QRD",
-	[PLATFORM_SUBTYPE_SKUAA] = "SKUAA",
-	[PLATFORM_SUBTYPE_SKUF] = "SKUF",
-	[PLATFORM_SUBTYPE_SKUAB] = "SKUAB",
-	[PLATFORM_SUBTYPE_SKUG] = "SKUG",
-	[PLATFORM_SUBTYPE_QRD_INVALID] = "INVALID",
 };
 
 enum {
@@ -222,14 +204,6 @@ struct socinfo_v8 {
 	uint32_t pmic_die_revision_2;
 };
 
-
-struct socinfo_v9 {
-	struct socinfo_v8 v8;
-
-	/* only valid when format==9*/
-	uint32_t foundry_id;
-};
-
 static union {
 	struct socinfo_v1 v1;
 	struct socinfo_v2 v2;
@@ -239,250 +213,240 @@ static union {
 	struct socinfo_v6 v6;
 	struct socinfo_v7 v7;
 	struct socinfo_v8 v8;
-	struct socinfo_v9 v9;
 } *socinfo;
 
-static struct msm_soc_info cpu_of_id[] = {
+static enum msm_cpu cpu_of_id[] = {
 
 	/* 7x01 IDs */
-	[0]  = {MSM_CPU_UNKNOWN, "Unknown CPU"},
-	[1]  = {MSM_CPU_7X01, "MSM7X01"},
-	[16] = {MSM_CPU_7X01, "MSM7X01"},
-	[17] = {MSM_CPU_7X01, "MSM7X01"},
-	[18] = {MSM_CPU_7X01, "MSM7X01"},
-	[19] = {MSM_CPU_7X01, "MSM7X01"},
-	[23] = {MSM_CPU_7X01, "MSM7X01"},
-	[25] = {MSM_CPU_7X01, "MSM7X01"},
-	[26] = {MSM_CPU_7X01, "MSM7X01"},
-	[32] = {MSM_CPU_7X01, "MSM7X01"},
-	[33] = {MSM_CPU_7X01, "MSM7X01"},
-	[34] = {MSM_CPU_7X01, "MSM7X01"},
-	[35] = {MSM_CPU_7X01, "MSM7X01"},
+	[1]  = MSM_CPU_7X01,
+	[16] = MSM_CPU_7X01,
+	[17] = MSM_CPU_7X01,
+	[18] = MSM_CPU_7X01,
+	[19] = MSM_CPU_7X01,
+	[23] = MSM_CPU_7X01,
+	[25] = MSM_CPU_7X01,
+	[26] = MSM_CPU_7X01,
+	[32] = MSM_CPU_7X01,
+	[33] = MSM_CPU_7X01,
+	[34] = MSM_CPU_7X01,
+	[35] = MSM_CPU_7X01,
 
 	/* 7x25 IDs */
-	[20] = {MSM_CPU_7X25, "MSM7X25"},
-	[21] = {MSM_CPU_7X25, "MSM7X25"},
-	[24] = {MSM_CPU_7X25, "MSM7X25"},
-	[27] = {MSM_CPU_7X25, "MSM7X25"},
-	[39] = {MSM_CPU_7X25, "MSM7X25"},
-	[40] = {MSM_CPU_7X25, "MSM7X25"},
-	[41] = {MSM_CPU_7X25, "MSM7X25"},
-	[42] = {MSM_CPU_7X25, "MSM7X25"},
-	[62] = {MSM_CPU_7X25, "MSM7X25"},
-	[63] = {MSM_CPU_7X25, "MSM7X25"},
-	[66] = {MSM_CPU_7X25, "MSM7X25"},
+	[20] = MSM_CPU_7X25,
+	[21] = MSM_CPU_7X25, /* 7225 */
+	[24] = MSM_CPU_7X25, /* 7525 */
+	[27] = MSM_CPU_7X25, /* 7625 */
+	[39] = MSM_CPU_7X25,
+	[40] = MSM_CPU_7X25,
+	[41] = MSM_CPU_7X25,
+	[42] = MSM_CPU_7X25,
+	[62] = MSM_CPU_7X25, /* 7625-1 */
+	[63] = MSM_CPU_7X25, /* 7225-1 */
+	[66] = MSM_CPU_7X25, /* 7225-2 */
 
 
 	/* 7x27 IDs */
-	[43] = {MSM_CPU_7X27, "MSM7X27"},
-	[44] = {MSM_CPU_7X27, "MSM7X27"},
-	[61] = {MSM_CPU_7X27, "MSM7X27"},
-	[67] = {MSM_CPU_7X27, "MSM7X27"},
-	[68] = {MSM_CPU_7X27, "MSM7X27"},
-	[69] = {MSM_CPU_7X27, "MSM7X27"},
+	[43] = MSM_CPU_7X27,
+	[44] = MSM_CPU_7X27,
+	[61] = MSM_CPU_7X27,
+	[67] = MSM_CPU_7X27, /* 7227-1 */
+	[68] = MSM_CPU_7X27, /* 7627-1 */
+	[69] = MSM_CPU_7X27, /* 7627-2 */
 
 
 	/* 8x50 IDs */
-	[30] = {MSM_CPU_8X50, "MSM8X50"},
-	[36] = {MSM_CPU_8X50, "MSM8X50"},
-	[37] = {MSM_CPU_8X50, "MSM8X50"},
-	[38] = {MSM_CPU_8X50, "MSM8X50"},
+	[30] = MSM_CPU_8X50,
+	[36] = MSM_CPU_8X50,
+	[37] = MSM_CPU_8X50,
+	[38] = MSM_CPU_8X50,
 
 	/* 7x30 IDs */
-	[59] = {MSM_CPU_7X30, "MSM7X30"},
-	[60] = {MSM_CPU_7X30, "MSM7X30"},
+	[59] = MSM_CPU_7X30,
+	[60] = MSM_CPU_7X30,
 
 	/* 8x55 IDs */
-	[74] = {MSM_CPU_8X55, "MSM8X55"},
-	[75] = {MSM_CPU_8X55, "MSM8X55"},
-	[85] = {MSM_CPU_8X55, "MSM8X55"},
+	[74] = MSM_CPU_8X55,
+	[75] = MSM_CPU_8X55,
+	[85] = MSM_CPU_8X55,
 
 	/* 8x60 IDs */
-	[70] = {MSM_CPU_8X60, "MSM8X60"},
-	[71] = {MSM_CPU_8X60, "MSM8X60"},
-	[86] = {MSM_CPU_8X60, "MSM8X60"},
+	[70] = MSM_CPU_8X60,
+	[71] = MSM_CPU_8X60,
+	[86] = MSM_CPU_8X60,
 
 	/* 8960 IDs */
-	[87] = {MSM_CPU_8960, "MSM8960"},
+	[87] = MSM_CPU_8960,
 
 	/* 7x25A IDs */
-	[88] = {MSM_CPU_7X25A, "MSM7X25A"},
-	[89] = {MSM_CPU_7X25A, "MSM7X25A"},
-	[96] = {MSM_CPU_7X25A, "MSM7X25A"},
+	[88] = MSM_CPU_7X25A,
+	[89] = MSM_CPU_7X25A,
+	[96] = MSM_CPU_7X25A,
 
 	/* 7x27A IDs */
-	[90] = {MSM_CPU_7X27A, "MSM7X27A"},
-	[91] = {MSM_CPU_7X27A, "MSM7X27A"},
-	[92] = {MSM_CPU_7X27A, "MSM7X27A"},
-	[97] = {MSM_CPU_7X27A, "MSM7X27A"},
+	[90] = MSM_CPU_7X27A,
+	[91] = MSM_CPU_7X27A,
+	[92] = MSM_CPU_7X27A,
+	[97] = MSM_CPU_7X27A,
 
 	/* FSM9xxx ID */
-	[94] = {FSM_CPU_9XXX, "FSM9XXX"},
-	[95] = {FSM_CPU_9XXX, "FSM9XXX"},
+	[94] = FSM_CPU_9XXX,
+	[95] = FSM_CPU_9XXX,
 
 	/*  7x25AA ID */
-	[98] = {MSM_CPU_7X25AA, "MSM7X25AA"},
-	[99] = {MSM_CPU_7X25AA, "MSM7X25AA"},
-	[100] = {MSM_CPU_7X25AA, "MSM7X25AA"},
+	[98] = MSM_CPU_7X25AA,
+	[99] = MSM_CPU_7X25AA,
+	[100] = MSM_CPU_7X25AA,
 
 	/*  7x27AA ID */
-	[101] = {MSM_CPU_7X27AA, "MSM7X27AA"},
-	[102] = {MSM_CPU_7X27AA, "MSM7X27AA"},
-	[103] = {MSM_CPU_7X27AA, "MSM7X27AA"},
-	[136] = {MSM_CPU_7X27AA, "MSM7X27AA"},
+	[101] = MSM_CPU_7X27AA,
+	[102] = MSM_CPU_7X27AA,
+	[103] = MSM_CPU_7X27AA,
+	[136] = MSM_CPU_7X27AA,
 
 	/* 9x15 ID */
-	[104] = {MSM_CPU_9615, "MSM9615"},
-	[105] = {MSM_CPU_9615, "MSM9615"},
-	[106] = {MSM_CPU_9615, "MSM9615"},
-	[107] = {MSM_CPU_9615, "MSM9615"},
-	[171] = {MSM_CPU_9615, "MSM9615"},
+	[104] = MSM_CPU_9615,
+	[105] = MSM_CPU_9615,
+	[106] = MSM_CPU_9615,
+	[107] = MSM_CPU_9615,
+	[171] = MSM_CPU_9615,
 
 	/* 8064 IDs */
-	[109] = {MSM_CPU_8064, "APQ8064"},
+	[109] = MSM_CPU_8064,
 
 	/* 8930 IDs */
-	[116] = {MSM_CPU_8930, "MSM8930"},
-	[117] = {MSM_CPU_8930, "MSM8930"},
-	[118] = {MSM_CPU_8930, "MSM8930"},
-	[119] = {MSM_CPU_8930, "MSM8930"},
-	[179] = {MSM_CPU_8930, "MSM8930"},
+	[116] = MSM_CPU_8930,
+	[117] = MSM_CPU_8930,
+	[118] = MSM_CPU_8930,
+	[119] = MSM_CPU_8930,
+	[179] = MSM_CPU_8930,
 
 	/* 8627 IDs */
-	[120] = {MSM_CPU_8627, "MSM8627"},
-	[121] = {MSM_CPU_8627, "MSM8627"},
+	[120] = MSM_CPU_8627,
+	[121] = MSM_CPU_8627,
 
 	/* 8660A ID */
-	[122] = {MSM_CPU_8960, "MSM8960"},
+	[122] = MSM_CPU_8960,
 
 	/* 8260A ID */
-	[123] = {MSM_CPU_8960, "MSM8960"},
+	[123] = MSM_CPU_8960,
 
 	/* 8060A ID */
-	[124] = {MSM_CPU_8960, "MSM8960"},
+	[124] = MSM_CPU_8960,
 
 	/* 8974 IDs */
-	[126] = {MSM_CPU_8974, "MSM8974"},
-	[184] = {MSM_CPU_8974, "MSM8974"},
-	[185] = {MSM_CPU_8974, "MSM8974"},
-	[186] = {MSM_CPU_8974, "MSM8974"},
+	[126] = MSM_CPU_8974,
+	[184] = MSM_CPU_8974,
+	[185] = MSM_CPU_8974,
+	[186] = MSM_CPU_8974,
 
 	/* 8974AA IDs */
-	[208] = {MSM_CPU_8974PRO_AA, "MSM8974PRO-AA"},
-	[211] = {MSM_CPU_8974PRO_AA, "MSM8974PRO-AA"},
-	[214] = {MSM_CPU_8974PRO_AA, "MSM8974PRO-AA"},
-	[217] = {MSM_CPU_8974PRO_AA, "MSM8974PRO-AA"},
+	[208] = MSM_CPU_8974PRO_AA,
+	[211] = MSM_CPU_8974PRO_AA,
+	[214] = MSM_CPU_8974PRO_AA,
+	[217] = MSM_CPU_8974PRO_AA,
 
 	/* 8974AB IDs */
-	[209] = {MSM_CPU_8974PRO_AB, "MSM8974PRO-AB"},
-	[212] = {MSM_CPU_8974PRO_AB, "MSM8974PRO-AB"},
-	[215] = {MSM_CPU_8974PRO_AB, "MSM8974PRO-AB"},
-	[218] = {MSM_CPU_8974PRO_AB, "MSM8974PRO-AB"},
+	[209] = MSM_CPU_8974PRO_AB,
+	[212] = MSM_CPU_8974PRO_AB,
+	[215] = MSM_CPU_8974PRO_AB,
+	[218] = MSM_CPU_8974PRO_AB,
 
 	/* 8974AC IDs */
-	[194] = {MSM_CPU_8974PRO_AC, "MSM8974PRO-AC"},
-	[210] = {MSM_CPU_8974PRO_AC, "MSM8974PRO-AC"},
-	[213] = {MSM_CPU_8974PRO_AC, "MSM8974PRO-AC"},
-	[216] = {MSM_CPU_8974PRO_AC, "MSM8974PRO-AC"},
+	[194] = MSM_CPU_8974PRO_AC,
+	[210] = MSM_CPU_8974PRO_AC,
+	[213] = MSM_CPU_8974PRO_AC,
+	[216] = MSM_CPU_8974PRO_AC,
 
 	/* 8625 IDs */
-	[127] = {MSM_CPU_8625, "MSM8625"},
-	[128] = {MSM_CPU_8625, "MSM8625"},
-	[129] = {MSM_CPU_8625, "MSM8625"},
-	[137] = {MSM_CPU_8625, "MSM8625"},
-	[167] = {MSM_CPU_8625, "MSM8625"},
+	[127] = MSM_CPU_8625,
+	[128] = MSM_CPU_8625,
+	[129] = MSM_CPU_8625,
+	[137] = MSM_CPU_8625,
+	[167] = MSM_CPU_8625,
 
 	/* 8064 MPQ ID */
-	[130] = {MSM_CPU_8064, "APQ8064"},
+	[130] = MSM_CPU_8064,
 
 	/* 7x25AB IDs */
-	[131] = {MSM_CPU_7X25AB, "MSM7X25AB"},
-	[132] = {MSM_CPU_7X25AB, "MSM7X25AB"},
-	[133] = {MSM_CPU_7X25AB, "MSM7X25AB"},
-	[135] = {MSM_CPU_7X25AB, "MSM7X25AB"},
+	[131] = MSM_CPU_7X25AB,
+	[132] = MSM_CPU_7X25AB,
+	[133] = MSM_CPU_7X25AB,
+	[135] = MSM_CPU_7X25AB,
 
 	/* 9625 IDs */
-	[134] = {MSM_CPU_9625, "MSM9625"},
-	[148] = {MSM_CPU_9625, "MSM9625"},
-	[149] = {MSM_CPU_9625, "MSM9625"},
-	[150] = {MSM_CPU_9625, "MSM9625"},
-	[151] = {MSM_CPU_9625, "MSM9625"},
-	[152] = {MSM_CPU_9625, "MSM9625"},
-	[173] = {MSM_CPU_9625, "MSM9625"},
-	[174] = {MSM_CPU_9625, "MSM9625"},
-	[175] = {MSM_CPU_9625, "MSM9625"},
+	[134] = MSM_CPU_9625,
+	[148] = MSM_CPU_9625,
+	[149] = MSM_CPU_9625,
+	[150] = MSM_CPU_9625,
+	[151] = MSM_CPU_9625,
+	[152] = MSM_CPU_9625,
+	[173] = MSM_CPU_9625,
+	[174] = MSM_CPU_9625,
+	[175] = MSM_CPU_9625,
 
 	/* 8960AB IDs */
-	[138] = {MSM_CPU_8960AB, "MSM8960AB"},
-	[139] = {MSM_CPU_8960AB, "MSM8960AB"},
-	[140] = {MSM_CPU_8960AB, "MSM8960AB"},
-	[141] = {MSM_CPU_8960AB, "MSM8960AB"},
+	[138] = MSM_CPU_8960AB,
+	[139] = MSM_CPU_8960AB,
+	[140] = MSM_CPU_8960AB,
+	[141] = MSM_CPU_8960AB,
 
 	/* 8930AA IDs */
-	[142] = {MSM_CPU_8930AA, "MSM8930AA"},
-	[143] = {MSM_CPU_8930AA, "MSM8930AA"},
-	[144] = {MSM_CPU_8930AA, "MSM8930AA"},
-	[160] = {MSM_CPU_8930AA, "MSM8930AA"},
-	[180] = {MSM_CPU_8930AA, "MSM8930AA"},
+	[142] = MSM_CPU_8930AA,
+	[143] = MSM_CPU_8930AA,
+	[144] = MSM_CPU_8930AA,
+	[160] = MSM_CPU_8930AA,
+	[180] = MSM_CPU_8930AA,
 
 	/* 8226 IDs */
-	[145] = {MSM_CPU_8226, "MSM8626"},
-	[158] = {MSM_CPU_8226, "MSM8226"},
-	[159] = {MSM_CPU_8226, "MSM8526"},
-	[198] = {MSM_CPU_8226, "MSM8126"},
-	[199] = {MSM_CPU_8226, "APQ8026"},
-	[200] = {MSM_CPU_8226, "MSM8926"},
-	[205] = {MSM_CPU_8226, "MSM8326"},
-	[219] = {MSM_CPU_8226, "APQ8028"},
-	[220] = {MSM_CPU_8226, "MSM8128"},
-	[221] = {MSM_CPU_8226, "MSM8228"},
-	[222] = {MSM_CPU_8226, "MSM8528"},
-	[223] = {MSM_CPU_8226, "MSM8628"},
-	[224] = {MSM_CPU_8226, "MSM8928"},
+	[145] = MSM_CPU_8226,
+	[158] = MSM_CPU_8226,
+	[159] = MSM_CPU_8226,
+	[198] = MSM_CPU_8226,
+	[199] = MSM_CPU_8226,
+	[200] = MSM_CPU_8226,
+	[205] = MSM_CPU_8226,
 
 	/* 8092 IDs */
-	[146] = {MSM_CPU_8092, "MSM8092"},
+	[146] = MSM_CPU_8092,
 
 	/* 8610 IDs */
-	[147] = {MSM_CPU_8610, "MSM8610"},
-	[161] = {MSM_CPU_8610, "MSM8110"},
-	[162] = {MSM_CPU_8610, "MSM8210"},
-	[163] = {MSM_CPU_8610, "MSM8810"},
-	[164] = {MSM_CPU_8610, "MSM8212"},
-	[165] = {MSM_CPU_8610, "MSM8612"},
-	[166] = {MSM_CPU_8610, "MSM8112"},
-	[225] = {MSM_CPU_8610, "MSM8510"},
-	[226] = {MSM_CPU_8610, "MSM8512"},
+	[147] = MSM_CPU_8610,
+	[161] = MSM_CPU_8610,
+	[162] = MSM_CPU_8610,
+	[163] = MSM_CPU_8610,
+	[164] = MSM_CPU_8610,
+	[165] = MSM_CPU_8610,
+	[166] = MSM_CPU_8610,
 
 	/* 8064AB IDs */
-	[153] = {MSM_CPU_8064AB, "APQ8064AB"},
+	[153] = MSM_CPU_8064AB,
 
 	/* 8930AB IDs */
-	[154] = {MSM_CPU_8930AB, "MSM8930AB"},
-	[155] = {MSM_CPU_8930AB, "MSM8930AB"},
-	[156] = {MSM_CPU_8930AB, "MSM8930AB"},
-	[157] = {MSM_CPU_8930AB, "MSM8930AB"},
-	[181] = {MSM_CPU_8930AB, "MSM8930AB"},
+	[154] = MSM_CPU_8930AB,
+	[155] = MSM_CPU_8930AB,
+	[156] = MSM_CPU_8930AB,
+	[157] = MSM_CPU_8930AB,
+	[181] = MSM_CPU_8930AB,
 
 	/* 8625Q IDs */
-	[168] = {MSM_CPU_8625Q, "MSM8225Q"},
-	[169] = {MSM_CPU_8625Q, "MSM8625Q"},
-	[170] = {MSM_CPU_8625Q, "MSM8125Q"},
+	[168] = MSM_CPU_8625Q,
+	[169] = MSM_CPU_8625Q,
+	[170] = MSM_CPU_8625Q,
 
 	/* 8064AA IDs */
-	[172] = {MSM_CPU_8064AA, "APQ8064AA"},
+	[172] = MSM_CPU_8064AA,
 
 	/* 8084 IDs */
-	[178] = {MSM_CPU_8084, "APQ8084"},
+	[178] = MSM_CPU_8084,
 
 	/* krypton IDs */
-	[187] = {MSM_CPU_KRYPTON, "MSMKRYPTON"},
+	[187] = MSM_CPU_KRYPTON,
 
 	/* FSM9900 ID */
-	[188] = {FSM_CPU_9900, "FSM9900"},
+	[188] = FSM_CPU_9900,
 
 	/* Samarium IDs */
-	[195] = {MSM_CPU_SAMARIUM, "MSMSAMARIUM"},
+	[195] = MSM_CPU_SAMARIUM,
 
 	/* Uninitialized IDs are not known to run Linux.
 	   MSM_CPU_UNKNOWN is set to 0 to ensure these IDs are
@@ -496,10 +460,8 @@ static struct socinfo_v1 dummy_socinfo = {
 	.format = 1,
 	.version = 1,
 };
-
-#ifndef CONFIG_MACH_MSM8974_G2_KDDI
 /*                                                                         */
-/*                                        */
+#ifndef CONFIG_MACH_MSM8974_G2_KDDI
 u16 *poweron_st = 0;
 uint16_t power_on_status_info_get(void)
 {
@@ -529,6 +491,12 @@ char *socinfo_get_build_id(void)
 	return (socinfo) ? socinfo->v1.build_id : NULL;
 }
 
+/* LGE_CHANGE
+ * implement the userspace interface for reading soc serial number
+ * 2012-01-10 jaeseong.gim@lge.com
+ * modify address of serial number for msm8974
+ * 2013-02-07 duckhwan.lee@lge.com
+ */
 #ifdef CONFIG_ARCH_MSM8974
 #include <linux/io.h>
 uint32_t socinfo_get_serial_number(void)
@@ -543,25 +511,6 @@ uint32_t socinfo_get_serial_number(void)
 	return serial_number;
 }
 #endif
-
-static char *msm_read_hardware_id(void)
-{
-	static char msm_soc_str[128] = "Qualcomm ";
-	static bool string_generated = false;
-
-	if (string_generated)
-		return msm_soc_str;
-	if (!socinfo)
-		goto err_path;
-	if (!cpu_of_id[socinfo->v1.id].soc_id_string)
-		goto err_path;
-
-	string_generated = true;
-	return strncat(msm_soc_str, cpu_of_id[socinfo->v1.id].soc_id_string,
-			sizeof(msm_soc_str) - strlen(msm_soc_str));
-err_path:
-	return "UNKNOWN SOC TYPE";
-}
 
 uint32_t socinfo_get_raw_id(void)
 {
@@ -607,14 +556,6 @@ uint32_t socinfo_get_platform_subtype(void)
 		(socinfo->v1.format >= 6 ? socinfo->v6.hw_platform_subtype : 0)
 		: 0;
 }
-
-static uint32_t socinfo_get_foundry_id(void)
-{
-	return socinfo ?
-		(socinfo->v1.format >= 9 ? socinfo->v9.foundry_id : 0)
-		: 0;
-}
-
 
 enum pmic_model socinfo_get_pmic_model(void)
 {
@@ -691,23 +632,22 @@ socinfo_show_build_id(struct sys_device *dev,
 	return snprintf(buf, PAGE_SIZE, "%-.32s\n", socinfo_get_build_id());
 }
 
-/*           
-                                                                  
-                                  
-                                              
-                                  
-                                 
-                              
+/* LGE_CHANGE
+ * implement the userspace interface for reading soc serial number
+ * 2012-01-10 jaeseong.gim@lge.com
+ * modify address of serial number for msm8974
+ * 2013-02-07 duckhwan.lee@lge.com
+ * added speed_bin & pvs_bin info
+ * 2013-06-07 fred.cho@lge.com
  */
 #ifdef CONFIG_ARCH_MSM8974
+#ifdef CONFIG_MACH_LGE
 static ssize_t
 socinfo_show_speed_bin(struct sys_device *dev,
 		      struct sysdev_attribute *attr,
 		      char *buf)
 {
-	int speed = 0;
-	get_speed_bin(&speed);
-	return snprintf(buf, PAGE_SIZE, "%u\n", speed);
+	return snprintf(buf, PAGE_SIZE, "%u\n", g_speed_bin);
 }
 
 static ssize_t
@@ -715,10 +655,9 @@ socinfo_show_pvs_bin(struct sys_device *dev,
 		      struct sysdev_attribute *attr,
 		      char *buf)
 {
-	int pvs = 0;
-	get_pvs_bin(&pvs);
-	return snprintf(buf, PAGE_SIZE, "%u\n", pvs);
+	return snprintf(buf, PAGE_SIZE, "%u\n", g_pvs_bin);
 }
+#endif
 
 static ssize_t
 socinfo_show_serial_number(struct sys_device *dev,
@@ -863,18 +802,9 @@ socinfo_show_platform_subtype(struct sys_device *dev,
 	}
 
 	hw_subtype = socinfo_get_platform_subtype();
-	if (HW_PLATFORM_QRD == socinfo_get_platform_type()) {
-		if (hw_subtype >= PLATFORM_SUBTYPE_QRD_INVALID) {
-			pr_err("%s: Invalid hardware platform sub type for qrd found\n",
-				__func__);
-			hw_subtype = PLATFORM_SUBTYPE_QRD_INVALID;
-		}
-		return snprintf(buf, PAGE_SIZE, "%-.32s\n",
-					qrd_hw_platform_subtype[hw_subtype]);
-	}
 	if (hw_subtype >= PLATFORM_SUBTYPE_INVALID) {
 		pr_err("%s: Invalid hardware platform sub type found\n",
-			   __func__);
+								   __func__);
 		hw_subtype = PLATFORM_SUBTYPE_UNKNOWN;
 	}
 	return snprintf(buf, PAGE_SIZE, "%-.32s\n",
@@ -989,27 +919,8 @@ msm_get_platform_subtype(struct device *dev,
 {
 	uint32_t hw_subtype;
 	hw_subtype = socinfo_get_platform_subtype();
-	if (HW_PLATFORM_QRD == socinfo_get_platform_type()) {
-		if (hw_subtype >= PLATFORM_SUBTYPE_QRD_INVALID) {
-			pr_err("%s: Invalid hardware platform sub type for qrd found\n",
-				__func__);
-			hw_subtype = PLATFORM_SUBTYPE_QRD_INVALID;
-		}
-		return snprintf(buf, PAGE_SIZE, "%-.32s\n",
-					qrd_hw_platform_subtype[hw_subtype]);
-	}
-
 	return snprintf(buf, PAGE_SIZE, "%-.32s\n",
 		hw_platform_subtype[hw_subtype]);
-}
-
-static ssize_t
-msm_get_foundry_id(struct device *dev,
-			struct device_attribute *attr,
-			char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%u\n",
-		socinfo_get_foundry_id());
 }
 
 static ssize_t
@@ -1044,28 +955,24 @@ msm_get_image_version(struct device *dev,
 		return snprintf(buf, SMEM_IMAGE_VERSION_NAME_SIZE, "Unknown");
 	}
 	string_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
-	return snprintf(buf, SMEM_IMAGE_VERSION_NAME_SIZE, "%-.75s\n",
+	string_address += SMEM_IMAGE_VERSION_NAME_OFFSET;
+	return snprintf(buf, SMEM_IMAGE_VERSION_NAME_SIZE, "%-.75s",
 			string_address);
 }
 
 static ssize_t
-msm_set_image_version(struct device *dev,
-			struct device_attribute *attr,
-			const char *buf,
-			size_t count)
+msm_store_image_type(struct device *dev, struct device_attribute *attr,
+			const char *buf, size_t count)
 {
-	char *store_address;
+	int ret, digit;
 
-	if (current_image != SMEM_IMAGE_VERSION_PARTITION_APPS)
-		return count;
-	store_address = socinfo_get_image_version_base_address();
-	if (store_address == NULL) {
-		pr_err("%s : Failed to get image version base address",
-				__func__);
-		return count;
-	}
-	store_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
-	snprintf(store_address, SMEM_IMAGE_VERSION_NAME_SIZE, "%-.75s", buf);
+	ret = kstrtoint(buf, 10, &digit);
+	if (ret)
+		return ret;
+	if (0 <= digit && digit < SMEM_IMAGE_VERSION_BLOCKS_COUNT)
+		current_image = digit;
+	else
+		current_image = 0;
 	return count;
 }
 
@@ -1085,30 +992,8 @@ msm_get_image_variant(struct device *dev,
 	}
 	string_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
 	string_address += SMEM_IMAGE_VERSION_VARIANT_OFFSET;
-	return snprintf(buf, SMEM_IMAGE_VERSION_VARIANT_SIZE, "%-.20s\n",
+	return snprintf(buf, SMEM_IMAGE_VERSION_VARIANT_SIZE, "%-.20s",
 			string_address);
-}
-
-static ssize_t
-msm_set_image_variant(struct device *dev,
-			struct device_attribute *attr,
-			const char *buf,
-			size_t count)
-{
-	char *store_address;
-
-	if (current_image != SMEM_IMAGE_VERSION_PARTITION_APPS)
-		return count;
-	store_address = socinfo_get_image_version_base_address();
-	if (store_address == NULL) {
-		pr_err("%s : Failed to get image version base address",
-				__func__);
-		return count;
-	}
-	store_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
-	store_address += SMEM_IMAGE_VERSION_VARIANT_OFFSET;
-	snprintf(store_address, SMEM_IMAGE_VERSION_VARIANT_SIZE, "%-.20s", buf);
-	return count;
 }
 
 static ssize_t
@@ -1134,15 +1019,17 @@ static struct sysdev_attribute socinfo_v1_files[] = {
 	_SYSDEV_ATTR(id, 0444, socinfo_show_id, NULL),
 	_SYSDEV_ATTR(version, 0444, socinfo_show_version, NULL),
 	_SYSDEV_ATTR(build_id, 0444, socinfo_show_build_id, NULL),
-#ifdef CONFIG_ARCH_MSM8974
+#ifdef CONFIG_MACH_LGE
 	_SYSDEV_ATTR(speed_bin, 0444, socinfo_show_speed_bin, NULL),
 	_SYSDEV_ATTR(pvs_bin, 0444, socinfo_show_pvs_bin, NULL),
-/*           
-                                                                  
-                                  
-                                              
-                                  
+#endif
+/* LGE_CHANGE
+ * implement the userspace interface for reading soc serial number
+ * 2012-01-10 jaeseong.gim@lge.com
+ * modify address of serial number for msm8974
+ * 2013-02-07 duckhwan.lee@lge.com
  */
+#ifdef CONFIG_ARCH_MSM8974
 	_SYSDEV_ATTR(serial_number, 0444, socinfo_show_serial_number, NULL),
 #endif
 };
@@ -1178,54 +1065,6 @@ static struct sysdev_attribute socinfo_v7_files[] = {
 			socinfo_show_pmic_die_revision, NULL),
 };
 
-static ssize_t
-msm_set_image_crm_version(struct device *dev,
-			struct device_attribute *attr,
-			const char *buf,
-			size_t count)
-{
-	char *store_address;
-
-	if (current_image != SMEM_IMAGE_VERSION_PARTITION_APPS)
-		return count;
-	store_address = socinfo_get_image_version_base_address();
-	if (store_address == NULL) {
-		pr_err("%s : Failed to get image version base address",
-				__func__);
-		return count;
-	}
-	store_address += current_image * SMEM_IMAGE_VERSION_SINGLE_BLOCK_SIZE;
-	store_address += SMEM_IMAGE_VERSION_OEM_OFFSET;
-	snprintf(store_address, SMEM_IMAGE_VERSION_OEM_SIZE, "%-.32s", buf);
-	return count;
-}
-
-static ssize_t
-msm_get_image_number(struct device *dev,
-			struct device_attribute *attr,
-			char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%d\n",
-			current_image);
-}
-
-static ssize_t
-msm_select_image(struct device *dev, struct device_attribute *attr,
-			const char *buf, size_t count)
-{
-	int ret, digit;
-
-	ret = kstrtoint(buf, 10, &digit);
-	if (ret)
-		return ret;
-	if (0 <= digit && digit < SMEM_IMAGE_VERSION_BLOCKS_COUNT)
-		current_image = digit;
-	else
-		current_image = 0;
-	return count;
-}
-
-
 static struct device_attribute msm_soc_attr_raw_version =
 	__ATTR(raw_version, S_IRUGO, msm_get_raw_version,  NULL);
 
@@ -1254,10 +1093,6 @@ static struct device_attribute msm_soc_attr_platform_subtype =
 	__ATTR(platform_subtype, S_IRUGO,
 			msm_get_platform_subtype, NULL);
 
-static struct device_attribute msm_soc_attr_foundry_id =
-	__ATTR(foundry_id, S_IRUGO,
-			msm_get_foundry_id, NULL);
-
 static struct device_attribute msm_soc_attr_pmic_model =
 	__ATTR(pmic_model, S_IRUGO,
 			msm_get_pmic_model, NULL);
@@ -1268,19 +1103,15 @@ static struct device_attribute msm_soc_attr_pmic_die_revision =
 
 static struct device_attribute image_version =
 	__ATTR(image_version, S_IRUGO | S_IWUSR,
-			msm_get_image_version, msm_set_image_version);
+			msm_get_image_version, msm_store_image_type);
 
 static struct device_attribute image_variant =
-	__ATTR(image_variant, S_IRUGO | S_IWUSR,
-			msm_get_image_variant, msm_set_image_variant);
+	__ATTR(image_variant, S_IRUGO,
+			msm_get_image_variant, NULL);
 
 static struct device_attribute image_crm_version =
-	__ATTR(image_crm_version, S_IRUGO | S_IWUSR,
-			msm_get_image_crm_version, msm_set_image_crm_version);
-
-static struct device_attribute select_image =
-	__ATTR(select_image, S_IRUGO | S_IWUSR,
-			msm_get_image_number, msm_select_image);
+	__ATTR(image_crm_version, S_IRUGO,
+			msm_get_image_crm_version, NULL);
 
 static struct sysdev_class soc_sysdev_class = {
 	.name = "soc",
@@ -1339,12 +1170,8 @@ static void __init populate_soc_sysfs_files(struct device *msm_soc_device)
 	device_create_file(msm_soc_device, &image_version);
 	device_create_file(msm_soc_device, &image_variant);
 	device_create_file(msm_soc_device, &image_crm_version);
-	device_create_file(msm_soc_device, &select_image);
 
 	switch (legacy_format) {
-	case 9:
-		device_create_file(msm_soc_device,
-					&msm_soc_attr_foundry_id);
 	case 8:
 	case 7:
 		device_create_file(msm_soc_device,
@@ -1422,64 +1249,56 @@ static int __init socinfo_init_sysdev(void)
 
 	msm_soc_device = soc_device_to_device(soc_dev);
 	populate_soc_sysfs_files(msm_soc_device);
-
 	err = sysdev_class_register(&soc_sysdev_class);
 	if (err) {
 		pr_err("%s: sysdev_class_register fail (%d)\n",
 		       __func__, err);
-		goto socinfo_init_err;
+		return err;
 	}
-
 	err = sysdev_register(&soc_sys_device);
 	if (err) {
 		pr_err("%s: sysdev_register fail (%d)\n",
 		       __func__, err);
-		goto socinfo_init_err;
+		return err;
 	}
-
 	socinfo_create_files(&soc_sys_device, socinfo_v1_files,
 				ARRAY_SIZE(socinfo_v1_files));
 	if (socinfo->v1.format < 2)
-		goto socinfo_init_err;
-
+		return err;
 	socinfo_create_files(&soc_sys_device, socinfo_v2_files,
 				ARRAY_SIZE(socinfo_v2_files));
 
 	if (socinfo->v1.format < 3)
-		goto socinfo_init_err;
+		return err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v3_files,
 				ARRAY_SIZE(socinfo_v3_files));
 
 	if (socinfo->v1.format < 4)
-		goto socinfo_init_err;
+		return err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v4_files,
 				ARRAY_SIZE(socinfo_v4_files));
 
 	if (socinfo->v1.format < 5)
-		goto socinfo_init_err;
+		return err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v5_files,
 				ARRAY_SIZE(socinfo_v5_files));
 
 	if (socinfo->v1.format < 6)
-		goto socinfo_init_err;
+		return err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v6_files,
 				ARRAY_SIZE(socinfo_v6_files));
 
 	if (socinfo->v1.format < 7)
-		goto socinfo_init_err;
+		return err;
 
 	socinfo_create_files(&soc_sys_device, socinfo_v7_files,
 				ARRAY_SIZE(socinfo_v7_files));
 
 	return 0;
-
-socinfo_init_err:
-	 kfree(soc_dev_attr);
-         return err;
 }
 
 arch_initcall(socinfo_init_sysdev);
@@ -1558,23 +1377,6 @@ static void socinfo_print(void)
 			socinfo->v7.pmic_model,
 			socinfo->v7.pmic_die_revision);
 		break;
-	case 9:
-		pr_info("%s: v%u, id=%u, ver=%u.%u, raw_id=%u, raw_ver=%u ,"
-			"hw_plat=%u, hw_plat_ver=%u\n accessory_chip=%u,"
-			"hw_plat_subtype=%u, pmic_model=%u, pmic_die_revision=%u,"
-			"foundry_id=%u\n", __func__,
-			socinfo->v1.format,
-			socinfo->v1.id,
-			SOCINFO_VERSION_MAJOR(socinfo->v1.version),
-			SOCINFO_VERSION_MINOR(socinfo->v1.version),
-			socinfo->v2.raw_id, socinfo->v2.raw_version,
-			socinfo->v3.hw_platform, socinfo->v4.platform_version,
-			socinfo->v5.accessory_chip,
-			socinfo->v6.hw_platform_subtype,
-			socinfo->v7.pmic_model,
-			socinfo->v7.pmic_die_revision,
-			socinfo->v9.foundry_id);
-		break;
 	default:
 		pr_err("%s: Unknown format found\n", __func__);
 		break;
@@ -1583,10 +1385,7 @@ static void socinfo_print(void)
 
 int __init socinfo_init(void)
 {
-	socinfo = smem_alloc(SMEM_HW_SW_BUILD_ID, sizeof(struct socinfo_v9));
-	if (!socinfo)
-		socinfo = smem_alloc(SMEM_HW_SW_BUILD_ID,
-				sizeof(struct socinfo_v8));
+	socinfo = smem_alloc(SMEM_HW_SW_BUILD_ID, sizeof(struct socinfo_v8));
 
 	if (!socinfo)
 		socinfo = smem_alloc(SMEM_HW_SW_BUILD_ID,
@@ -1623,16 +1422,14 @@ int __init socinfo_init(void)
 	}
 
 	WARN(!socinfo_get_id(), "Unknown SOC ID!\n");
+	WARN(socinfo_get_id() >= ARRAY_SIZE(cpu_of_id),
+		"New IDs added! ID => CPU mapping might need an update.\n");
 
-	if (socinfo_get_id() >= ARRAY_SIZE(cpu_of_id))
-		BUG_ON("New IDs added! ID => CPU mapping might need an update.\n");
-
-	else
-		cur_cpu = cpu_of_id[socinfo->v1.id].generic_soc_type;
+	if (socinfo->v1.id < ARRAY_SIZE(cpu_of_id))
+		cur_cpu = cpu_of_id[socinfo->v1.id];
 
 	boot_stats_init();
 	socinfo_print();
-	arch_read_hardware_id = msm_read_hardware_id;
 
 	return 0;
 }

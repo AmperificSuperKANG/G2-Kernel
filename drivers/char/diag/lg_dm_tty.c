@@ -338,31 +338,6 @@ static int lge_dm_tty_read_thread(void *data)
 				}
 			}
 			
-			for (i = 0; i < NUM_SMD_CMD_CHANNELS; i++) {
-				struct diag_smd_info *cmd = &driver->smd_cmd[i];
-					if (cmd->in_busy_1 == 1) {
-						if(cmd->write_ptr_1->length > 0 && cmd->buf_in_1 != NULL){
-							lge_dm_tty_modem_response(
-							lge_dm_tty_drv,
-							Primary_modem_chip,
-							cmd->buf_in_1,
-							cmd->write_ptr_1->length);
-						}
-
-						cmd->in_busy_1 = 0;
-					}
-					if (cmd->in_busy_2 == 1) {
-						if(cmd->write_ptr_2->length > 0 && cmd->buf_in_2 != NULL){
-							lge_dm_tty_modem_response(
-							lge_dm_tty_drv,
-							Primary_modem_chip,
-							cmd->buf_in_2,
-							cmd->write_ptr_2->length);
-						}
-
-						cmd->in_busy_2 = 0;
-					}
-			}
 
 			lge_dm_tty->set_logging = 0;
 
@@ -571,15 +546,6 @@ static int lge_dm_tty_ioctl(struct tty_struct *tty, unsigned int cmd,
 						&(driver->smd_data[i].
 							diag_read_smd_work));
 			}// end of for loop			
-
-			for (i = 0; i < NUM_SMD_CMD_CHANNELS; i++) {
-				driver->smd_cmd[i].in_busy_1 = 0;
-				driver->smd_cmd[i].in_busy_2 = 0;
-				if (driver->smd_cmd[i].ch)
-					queue_work(driver->diag_wq,
-						&(driver->smd_cmd[i].
-							diag_read_smd_work));
-			}
 		} else if (modem_number == Secondary_modem_chip) {
 
 			//TBD...

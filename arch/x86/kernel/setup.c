@@ -69,7 +69,6 @@
 #include <linux/percpu.h>
 #include <linux/crash_dump.h>
 #include <linux/tboot.h>
-#include <linux/jiffies.h>
 
 #include <video/edid.h>
 
@@ -627,7 +626,7 @@ static bool __init snb_gfx_workaround_needed(void)
 #ifdef CONFIG_PCI
 	int i;
 	u16 vendor, devid;
-	static const __initconst u16 snb_ids[] = {
+	static const u16 snb_ids[] = {
 		0x0102,
 		0x0112,
 		0x0122,
@@ -660,7 +659,7 @@ static bool __init snb_gfx_workaround_needed(void)
  */
 static void __init trim_snb_memory(void)
 {
-	static const __initconst unsigned long bad_pages[] = {
+	static const unsigned long bad_pages[] = {
 		0x20050000,
 		0x20110000,
 		0x20130000,
@@ -1137,8 +1136,6 @@ void __init setup_arch(char **cmdline_p)
 	mcheck_init();
 
 	arch_init_ideal_nops();
-
-	register_refined_jiffies(CLOCK_TICK_RATE);
 
 #ifdef CONFIG_EFI
 	/* Once setup is done above, unmap the EFI memory map on

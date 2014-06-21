@@ -2130,7 +2130,7 @@ static int __mkroute_input(struct sk_buff *skb,
 	struct in_device *out_dev;
 	unsigned int flags = 0;
 	__be32 spec_dst;
-	u32 itag = 0;
+	u32 itag;
 
 	/* get a working reference to the output device */
 	out_dev = __in_dev_get_rcu(FIB_RES_DEV(*res));
@@ -2795,13 +2795,13 @@ static struct rtable *ip_route_output_slow(struct net *net, struct flowi4 *fl4)
 
 	dev_out = FIB_RES_DEV(res);
 
-	/*                                                                   */
+	/* 2012-06-16 jewon.lee@lge.com LGP_DATA_KERNEL_BUGFIX_ROUTE [START] */
 	if (dev_out == NULL) {
 		printk(KERN_DEBUG "dev_out is null\n");
 		rth = ERR_PTR(-ENETUNREACH);
 		goto out;
 	}
-	/*                                                                 */
+	/* 2012-06-16 jewon.lee@lge.com LGP_DATA_KERNEL_BUGFIX_ROUTE [END] */
 
 	fl4->flowi4_oif = dev_out->ifindex;
 
@@ -3488,7 +3488,7 @@ int __init ip_rt_init(void)
 	devinet_init();
 	ip_fib_init();
 
-	INIT_DEFERRABLE_WORK(&expires_work, rt_worker_func);
+	INIT_DELAYED_WORK_DEFERRABLE(&expires_work, rt_worker_func);
 	expires_ljiffies = jiffies;
 	schedule_delayed_work(&expires_work,
 		net_random() % ip_rt_gc_interval + ip_rt_gc_interval);

@@ -44,8 +44,6 @@
 #define tmc_writel(drvdata, val, off)	__raw_writel((val), drvdata->base + off)
 #define tmc_readl(drvdata, off)		__raw_readl(drvdata->base + off)
 
-#define tmc_readl_no_log(drvdata, off)	__raw_readl_no_log(drvdata->base + off)
-
 #define TMC_LOCK(drvdata)						\
 do {									\
 	mb();								\
@@ -654,7 +652,7 @@ static void __tmc_etb_dump(struct tmc_drvdata *drvdata)
 	bufp = drvdata->buf;
 	while (1) {
 		for (i = 0; i < memwords; i++) {
-			read_data = tmc_readl_no_log(drvdata, TMC_RRD);
+			read_data = tmc_readl(drvdata, TMC_RRD);
 			if (read_data == 0xFFFFFFFF)
 				goto out;
 			memcpy(bufp, &read_data, BYTES_PER_WORD);
@@ -1301,7 +1299,7 @@ static ssize_t tmc_etr_store_byte_cntr_value(struct device *dev,
 		return -EINVAL;
 	if ((drvdata->size / 8) < val)
 		return -EINVAL;
-	if (val && drvdata->size % (val * 8) != 0)
+	if (drvdata->size % (val * 8) != 0)
 		return -EINVAL;
 
 	drvdata->byte_cntr_value = val;
@@ -1407,39 +1405,32 @@ static int tmc_etr_byte_cntr_dev_register(struct tmc_drvdata *drvdata)
 
 	ret = alloc_chrdev_region(&dev, 0, 1, drvdata->byte_cntr_node);
 	if (ret)
-		goto err0;
-
+		goto dev_err0;
 	cdev_init(&drvdata->byte_cntr_dev, &byte_cntr_fops);
-
 	drvdata->byte_cntr_dev.owner = THIS_MODULE;
 	drvdata->byte_cntr_dev.ops = &byte_cntr_fops;
 	ret = cdev_add(&drvdata->byte_cntr_dev, dev, 1);
 	if (ret)
-		goto err1;
-
+		goto dev_err1;
 	drvdata->byte_cntr_class = class_create(THIS_MODULE,
 						drvdata->byte_cntr_node);
-	if (IS_ERR(drvdata->byte_cntr_class)) {
-		ret = PTR_ERR(drvdata->byte_cntr_class);
-		goto err2;
-	}
-
+	if (!drvdata->byte_cntr_class)
+		goto dev_err2;
 	device = device_create(drvdata->byte_cntr_class, NULL,
 			       drvdata->byte_cntr_dev.dev, drvdata,
 			       drvdata->byte_cntr_node);
 	if (IS_ERR(device)) {
 		ret = PTR_ERR(device);
-		goto err3;
+		goto dev_err3;
 	}
-
 	return 0;
-err3:
+dev_err3:
 	class_destroy(drvdata->byte_cntr_class);
-err2:
+dev_err2:
 	cdev_del(&drvdata->byte_cntr_dev);
-err1:
+dev_err1:
 	unregister_chrdev_region(drvdata->byte_cntr_dev.dev, 1);
-err0:
+dev_err0:
 	return ret;
 }
 
@@ -1461,54 +1452,36 @@ static int tmc_etr_byte_cntr_init(struct platform_device *pdev,
 
 	if (!drvdata->byte_cntr_present) {
 		dev_info(&pdev->dev, "Byte Counter feature absent\n");
-		goto out;
+		return 0;
 	}
 
 	drvdata->byte_cntr_irq = platform_get_irq_byname(pdev,
 							"byte-cntr-irq");
 	if (drvdata->byte_cntr_irq < 0) {
-		/* Even though this is an error condition, we do not fail
-		 * the probe as the byte counter feature is optional
-		 */
 		dev_err(&pdev->dev, "Byte-cntr-irq not specified\n");
-		goto err;
+		return 0;
 	}
-
 	ret = devm_request_irq(&pdev->dev, drvdata->byte_cntr_irq,
 			tmc_etr_byte_cntr_irq,
 			IRQF_TRIGGER_RISING | IRQF_SHARED,
 			node_name, drvdata);
 	if (ret) {
 		dev_err(&pdev->dev, "Request irq failed\n");
-		goto err;
+		return ret;
 	}
-
 	init_waitqueue_head(&drvdata->wq);
 	node_size += strlen(node_name);
-
 	drvdata->byte_cntr_node = devm_kzalloc(&pdev->dev,
-					       node_size, GFP_KERNEL);
-	if (!drvdata->byte_cntr_node) {
-		dev_err(&pdev->dev, "Byte cntr node name allocation failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
+				node_size, GFP_KERNEL);
 	strlcpy(drvdata->byte_cntr_node, node_name, node_size);
 	strlcat(drvdata->byte_cntr_node, "-stream", node_size);
-
 	ret = tmc_etr_byte_cntr_dev_register(drvdata);
 	if (ret) {
 		dev_err(&pdev->dev, "Byte cntr node not registered\n");
-		goto err;
+		return ret;
 	}
-
 	dev_info(&pdev->dev, "Byte Counter feature enabled\n");
 	return 0;
-err:
-	drvdata->byte_cntr_present = false;
-out:
-	return ret;
 }
 
 static void tmc_etr_byte_cntr_exit(struct tmc_drvdata *drvdata)

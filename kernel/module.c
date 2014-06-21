@@ -1115,9 +1115,6 @@ static int check_version(Elf_Shdr *sechdrs,
 	unsigned int i, num_versions;
 	struct modversion_info *versions;
 
-	/* HACK to load closed source LG exfat module */
-	if (!strncmp("texfat", mod->name, 6)) return 1;
-
 	/* Exporting module didn't supply crcs?  OK, we're already tainted. */
 	if (!crc)
 		return 1;
@@ -3461,9 +3458,6 @@ static struct module *load_module(void __user *umod,
 
 	/* This has to be done once we're sure module name is unique. */
 	dynamic_debug_setup(info.debug, info.num_debug);
-
-	/* Ftrace init must be called in the MODULE_STATE_UNFORMED state */
-	ftrace_module_init(mod);
 
 	/* Find duplicate symbols */
 	err = verify_export_symbols(mod);

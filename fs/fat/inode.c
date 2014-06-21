@@ -184,7 +184,8 @@ static int fat_write_end(struct file *file, struct address_space *mapping,
 }
 
 static ssize_t fat_direct_IO(int rw, struct kiocb *iocb,
-			     struct iov_iter *iter, loff_t offset)
+			     const struct iovec *iov,
+			     loff_t offset, unsigned long nr_segs)
 {
 	struct file *file = iocb->ki_filp;
 	struct address_space *mapping = file->f_mapping;
@@ -201,7 +202,7 @@ static ssize_t fat_direct_IO(int rw, struct kiocb *iocb,
 		 *
 		 * Return 0, and fallback to normal buffered write.
 		 */
-		loff_t size = offset + iov_iter_count(iter);
+		loff_t size = offset + iov_length(iov, nr_segs);
 		if (MSDOS_I(inode)->mmu_private < size)
 			return 0;
 	}
@@ -210,9 +211,10 @@ static ssize_t fat_direct_IO(int rw, struct kiocb *iocb,
 	 * FAT need to use the DIO_LOCKING for avoiding the race
 	 * condition of fat_get_block() and ->truncate().
 	 */
-	ret = blockdev_direct_IO(rw, iocb, inode, iter, offset, fat_get_block);
+	ret = blockdev_direct_IO(rw, iocb, inode, iov, offset, nr_segs,
+				 fat_get_block);
 	if (ret < 0 && (rw & WRITE))
-		fat_write_failed(mapping, offset + iov_iter_count(iter));
+		fat_write_failed(mapping, offset + iov_length(iov, nr_segs));
 
 	return ret;
 }
@@ -240,7 +242,7 @@ static const struct address_space_operations fat_aops = {
 	.bmap		= _fat_bmap
 };
 
-/*                                                                                         */
+/*2013-05-02 Hyoungtaek-Lim[hyoungtaek.lim@lge.com)[g2/vmware/vzw,att]VMware Switch [START]*/
 #ifdef CONFIG_LGE_B2B_VMWARE
 int _fat_fallocate(struct inode *inode, loff_t len)
 {
@@ -267,7 +269,7 @@ int _fat_fallocate(struct inode *inode, loff_t len)
 		return 0;
 	}
 
-	nblocks = (len + sb->s_blocksize - 1) >> sb->s_blocksize_bits;
+	nblocks = (len + sb->s_blocksize - 1 ) >> sb->s_blocksize_bits;
 	iblock = (MSDOS_I(inode)->mmu_private + sb->s_blocksize - 1) >> sb->s_blocksize_bits;
 
 	/* validate new size */
@@ -307,7 +309,7 @@ int _fat_fallocate(struct inode *inode, loff_t len)
 	return err;
 }
 #endif
-/*                                                                                       */
+/*2013-05-02 Hyoungtaek-Lim[hyoungtaek.lim@lge.com)[g2/vmware/vzw,att]VMware Switch [END]*/
 
 /*
  * New FAT inode stuff. We do the following:
@@ -521,7 +523,7 @@ static void fat_evict_inode(struct inode *inode)
 		fat_truncate_blocks(inode, 0);
 	}
 	invalidate_inode_buffers(inode);
-	clear_inode(inode);
+	end_writeback(inode);
 	fat_cache_inval_inode(inode);
 	fat_detach(inode);
 }

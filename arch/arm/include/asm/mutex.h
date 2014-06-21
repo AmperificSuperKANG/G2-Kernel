@@ -7,7 +7,6 @@
  */
 #ifndef _ASM_MUTEX_H
 #define _ASM_MUTEX_H
-
 /*
  * On pre-ARMv6 hardware this results in a swp-based implementation,
  * which is the most efficient. For ARMv6+, we have exclusive memory
@@ -19,4 +18,4 @@
 #else
 #include <asm-generic/mutex-dec.h>
 #endif
-#endif
+#endif	/* _ASM_MUTEX_H */

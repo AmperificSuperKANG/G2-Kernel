@@ -160,6 +160,7 @@ void mls_sid_to_context(struct context *context,
 int mls_level_isvalid(struct policydb *p, struct mls_level *l)
 {
 	struct level_datum *levdatum;
+	struct ebitmap_node *nodel, *noded;
 
 	if (!l->sens || l->sens > p->p_levels.nprim)
 		return 0;
@@ -169,12 +170,35 @@ int mls_level_isvalid(struct policydb *p, struct mls_level *l)
 		return 0;
 
 	/*
-	 * Return 1 iff all the bits set in l->cat are also be set in
-	 * levdatum->level->cat and no bit in l->cat is larger than
-	 * p->p_cats.nprim.
+	 * Return 1 iff
+	 * 1. l->cat.node is NULL, or
+	 * 2. all the bits set in l->cat are also set in levdatum->level->cat,
+	 *    and
+	 * 3. the last bit set in l->cat should not be larger than
+	 *    p->p_cats.nprim.
 	 */
-	return ebitmap_contains(&levdatum->level->cat, &l->cat,
-				p->p_cats.nprim);
+	noded = levdatum->level->cat.node;
+	for (nodel = l->cat.node ; nodel ; nodel = nodel->next) {
+		int i, lastsetbit = -1;
+
+		for (i = EBITMAP_UNIT_NUMS - 1 ; i >= 0 ; i--) {
+			if (!nodel->maps[i])
+				continue;
+			if (!noded ||
+			   ((nodel->maps[i]&noded->maps[i]) != nodel->maps[i]))
+				return 0;
+			if (lastsetbit < 0)
+				lastsetbit = nodel->startbit +
+					     i * EBITMAP_UNIT_SIZE +
+					     __fls(nodel->maps[i]);
+		}
+		if ((lastsetbit >= 0) && (lastsetbit > p->p_cats.nprim))
+			return 0;
+		if (noded)
+			noded = noded->next;
+	}
+
+	return 1;
 }
 
 int mls_range_isvalid(struct policydb *p, struct mls_range *r)

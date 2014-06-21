@@ -331,11 +331,11 @@ struct mtp_ext_config_desc_function {
 };
 
 #ifdef NOT_CONFIG_USB_G_LGE_ANDROID
-/*           
-                                                               
-                                                                            
-                                                                   
-                                   
+/* LGE_CHANGE
+ * MS Ext Desciptor for MTP and adb (to use in testing driver).
+ * NOTE: this remains for reference code about MTP setting with ADB enabled.
+ * Therefore we do not use this officially(so NOT_ prefix is used).
+ * 2011-02-09, hyunhui.park@lge.com
  */
 
 /* MTP Extended Configuration Descriptor */
@@ -616,14 +616,16 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 
 	DBG(cdev, "mtp_read(%d)\n", count);
 
-#ifdef CONFIG_USB_G_LGE_ANDROID
-	if (!dev->ep_out)
-		return -EINVAL;
-#endif
 	len = ALIGN(count, dev->ep_out->maxpacket);
 
-	if (len > mtp_rx_req_len)
-		return -EINVAL;
+#ifdef CONFIG_USB_G_LGE_ANDROID
+	if (dev->ep_out && !IS_ALIGNED(count, dev->ep_out->maxpacket))
+                DBG(cdev, "%s - count(%d) not multiple of mtu(%d)\n", __func__,
+                                                count, dev->ep_out->maxpacket);
+#else
+        if (len > mtp_rx_req_len)
+                return -EINVAL;
+#endif
 
 	/* we will block until we're online */
 	DBG(cdev, "mtp_read: waiting for online state\n");
@@ -903,7 +905,7 @@ static void receive_file_work(struct work_struct *data)
 	struct file *filp;
 	loff_t offset;
 	int64_t count;
-	int ret, len, cur_buf = 0;
+	int ret, cur_buf = 0;
 	int r = 0;
 
 	/* read our parameters */
@@ -913,6 +915,9 @@ static void receive_file_work(struct work_struct *data)
 	count = dev->xfer_file_length;
 
 	DBG(cdev, "receive_file_work(%lld)\n", count);
+	if (!IS_ALIGNED(count, dev->ep_out->maxpacket))
+		DBG(cdev, "%s- count(%lld) not multiple of mtu(%d)\n", __func__,
+						count, dev->ep_out->maxpacket);
 
 	while (count > 0 || write_req) {
 		if (count > 0) {
@@ -924,10 +929,8 @@ static void receive_file_work(struct work_struct *data)
 			cur_buf = (cur_buf + 1) % RX_REQ_MAX;
 #endif
 
-			len = ALIGN(count, dev->ep_out->maxpacket);
-			if (len > mtp_rx_req_len)
-				len = mtp_rx_req_len;
-			read_req->length = len;
+			/* some h/w expects size to be aligned to ep's MTU */
+			read_req->length = mtp_rx_req_len;
 
 			dev->rx_done = 0;
 			ret = usb_ep_queue(dev->ep_out, read_req, GFP_KERNEL);
@@ -959,7 +962,10 @@ static void receive_file_work(struct work_struct *data)
 				dev->rx_done || dev->state != STATE_BUSY);
 			if (dev->state == STATE_CANCELED
 					|| dev->state == STATE_OFFLINE) {
-				r = -ECANCELED;
+				if (dev->state == STATE_OFFLINE)
+					r = -EIO;
+				else
+					r = -ECANCELED;
 				if (!dev->rx_done)
 					usb_ep_dequeue(dev->ep_out, read_req);
 				break;
@@ -1130,12 +1136,6 @@ out:
 static int mtp_open(struct inode *ip, struct file *fp)
 {
 	printk(KERN_INFO "mtp_open\n");
-#ifdef CONFIG_USB_G_LGE_MULTIPLE_CONFIGURATION
-    if( nSetConfig >= 2 ) {
-        printk(KERN_INFO "%s : Set Config number is %d\n", __func__, nSetConfig);
-        return -EACCES;
-    }
-#endif //                                       
 	if (mtp_lock(&_mtp_dev->open_excl))
 		return -EBUSY;
 

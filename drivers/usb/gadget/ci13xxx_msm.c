@@ -69,26 +69,6 @@ static void ci13xxx_msm_disconnect(void)
 				ULPI_CLR(ULPI_MISC_A));
 }
 
-/* Link power management will reduce power consumption by
- * short time HW suspend/resume.
- */
-static void ci13xxx_msm_set_l1(struct ci13xxx *udc)
-{
-	int temp;
-	struct device *dev = udc->gadget.dev.parent;
-
-	dev_dbg(dev, "Enable link power management\n");
-
-	/* Enable remote wakeup and L1 for IN EPs */
-	writel_relaxed(0xffff0000, USB_L1_EP_CTRL);
-
-	temp = readl_relaxed(USB_L1_CONFIG);
-	temp |= L1_CONFIG_LPM_EN | L1_CONFIG_REMOTE_WAKEUP |
-		L1_CONFIG_GATE_SYS_CLK | L1_CONFIG_PHY_LPM |
-		L1_CONFIG_PLL;
-	writel_relaxed(temp, USB_L1_CONFIG);
-}
-
 static void ci13xxx_msm_connect(void)
 {
 	struct ci13xxx *udc = _udc;
@@ -128,9 +108,6 @@ static void ci13xxx_msm_reset(void)
 
 	writel_relaxed(0, USB_AHBBURST);
 	writel_relaxed(0x08, USB_AHBMODE);
-
-	if (udc->gadget.l1_supported)
-		ci13xxx_msm_set_l1(udc);
 
 	if (phy && (phy->flags & ENABLE_SECONDARY_PHY)) {
 		int	temp;
@@ -257,7 +234,6 @@ static int ci13xxx_msm_probe(struct platform_device *pdev)
 	struct resource *res;
 	int ret;
 	struct ci13xxx_platform_data *pdata = pdev->dev.platform_data;
-	bool is_l1_supported = false;
 
 	dev_dbg(&pdev->dev, "ci13xxx_msm_probe\n");
 
@@ -269,12 +245,6 @@ static int ci13xxx_msm_probe(struct platform_device *pdev)
 		else
 			ci13xxx_msm_udc_driver.nz_itc =
 				1 << (pdata->log2_itc-1);
-
-		is_l1_supported = pdata->l1_supported;
-		/* Set ahb2ahb bypass flag if it is requested. */
-		if (pdata->enable_ahb2ahb_bypass)
-			ci13xxx_msm_udc_driver.flags |=
-				CI13XXX_ENABLE_AHB2AHB_BYPASS;
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -294,8 +264,6 @@ static int ci13xxx_msm_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "udc_probe failed\n");
 		goto iounmap;
 	}
-
-	_udc->gadget.l1_supported = is_l1_supported;
 
 	_udc_ctxt.irq = platform_get_irq(pdev, 0);
 	if (_udc_ctxt.irq < 0) {

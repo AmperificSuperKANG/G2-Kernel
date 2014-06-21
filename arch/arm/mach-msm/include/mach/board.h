@@ -182,12 +182,11 @@ struct msm_gpio_set_tbl {
 	uint32_t delay;
 };
 
-/*                                
-                                                                
+/* soojung.lim@lge.com, 2013-06-01
+ *  Fix the maximum count to use the msm_sensor_power_seq_gpio_t
  */
 struct msm_camera_gpio_num_info {
-	uint16_t gpio_num[10]; //                                                                                    
-//	uint16_t gpio_num[8];
+	uint16_t gpio_num[8];
 };
 
 struct msm_camera_gpio_conf {
@@ -390,10 +389,10 @@ struct msm_panel_common_pdata {
 	void (*panel_config_gpio)(int);
 	int (*vga_switch)(int select_vga);
 #ifdef CONFIG_LGE_LCD_TUNING
-	/*             
-                                        
-                                    
-  */
+	/* LGE_CHANGE_S
+	 * To get init code used for LCD driver
+	 * 2012-12-03, minjong.gong@lge.com
+	 */
 	int (*read_regset)(unsigned long);
 	int (*write_regset)(unsigned long);
 #endif
@@ -525,10 +524,6 @@ struct msm_mhl_platform_data {
 /**
  * msm_i2c_platform_data: i2c-qup driver configuration data
  *
- * @clk_ctl_xfer : When true, the clocks's state (prepare_enable/
- *       unprepare_disable) is controlled by i2c-transaction's begining and
- *       ending. When false, the clock's state is controlled by runtime-pm
- *       events.
  * @active_only when set, votes when system active and removes the vote when
  *       system goes idle (optimises for performance). When unset, voting using
  *       runtime pm (optimizes for power).
@@ -537,7 +532,6 @@ struct msm_mhl_platform_data {
  */
 struct msm_i2c_platform_data {
 	int clk_freq;
-	bool clk_ctl_xfer;
 	uint32_t rmutex;
 	const char *rsl_id;
 	uint32_t pm_lat;

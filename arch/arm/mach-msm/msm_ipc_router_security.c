@@ -289,8 +289,10 @@ int msm_ipc_check_send_permissions(void *data)
 		if (in_egroup_p(rule->group_id[i]))
 			return 1;
 	}
-	/* AOSP HACK */
-	if (in_egroup_p(3009)) /* AID_QCOM_ONCRPC */
+
+        /* Ugly hack: Allow all callers in the QCOM_ONCRPC group to pass,
+         *            this will allow the rild to work under CM */
+	if (in_egroup_p(3009)) // AID_QCOM_ONCRPC
 		return 1;
 
 	return 0;

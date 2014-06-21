@@ -40,29 +40,16 @@
 #define MAX_ACTUATOR_REGION 5
 #define MAX_ACTUATOR_INIT_SET 12
 #define MAX_ACTUATOR_REG_TBL_SIZE 8
-#define MAX_ACTUATOR_AF_TOTAL_STEPS 1024
 
 #define MOVE_NEAR 0
 #define MOVE_FAR  1
 
-#define MSM_ACTUATOR_MOVE_SIGNED_FAR -1
-#define MSM_ACTUATOR_MOVE_SIGNED_NEAR  1
-
 #define MAX_EEPROM_NAME 32
-
-#define MAX_AF_ITERATIONS 3
-
-enum flash_type {
-	LED_FLASH = 1,
-	STROBE_FLASH,
-	GPIO_FLASH
-};
 
 enum msm_camera_i2c_reg_addr_type {
 	MSM_CAMERA_I2C_BYTE_ADDR = 1,
 	MSM_CAMERA_I2C_WORD_ADDR,
 	MSM_CAMERA_I2C_3B_ADDR,
-	MSM_CAMERA_I2C_ADDR_TYPE_MAX,
 };
 
 enum msm_camera_i2c_data_type {
@@ -73,7 +60,6 @@ enum msm_camera_i2c_data_type {
 	MSM_CAMERA_I2C_SET_WORD_MASK,
 	MSM_CAMERA_I2C_UNSET_WORD_MASK,
 	MSM_CAMERA_I2C_SET_BYTE_WRITE_MASK_DATA,
-	MSM_CAMERA_I2C_DATA_TYPE_MAX,
 };
 
 enum msm_sensor_power_seq_type_t {
@@ -92,18 +78,17 @@ enum msm_sensor_clk_type_t {
 enum msm_sensor_power_seq_gpio_t {
 	SENSOR_GPIO_RESET,
 	SENSOR_GPIO_STANDBY,
-	SENSOR_GPIO_AF_PWDM,
-	SENSOR_GPIO_VIO,
+/* LGE_CHANGE_S
+ * Camera bring-up : Add gpio to control LDO
+ * 2013-02-05, jinw.kim@lge.com
+ */
 	SENSOR_GPIO_VANA,
 	SENSOR_GPIO_VDIG,
-	SENSOR_GPIO_VAF,
-/*             
-                                            
-                                                                        
- */
+	SENSOR_GPIO_VIO,
+	SENSOR_GPIO_VCM,
 	SENSOR_GPIO_OIS_LDO_EN,
 	SENSOR_GPIO_OIS_RESET,
-/*                                                         */
+/* LGE_CHANGE_E,  Camera bring-up : Add gpio to control LDO*/
 	SENSOR_GPIO_MAX,
 };
 
@@ -124,7 +109,6 @@ enum msm_sensor_resolution_t {
 	MSM_SENSOR_RES_5,
 	MSM_SENSOR_RES_6,
 	MSM_SENSOR_RES_7,
-	MSM_SENSOR_RES_8,	 //                                                                       
 	MSM_SENSOR_INVALID_RES,
 };
 
@@ -140,62 +124,6 @@ enum sensor_sub_module_t {
 	SUB_MODULE_CSIPHY,
 	SUB_MODULE_CSIPHY_3D,
 	SUB_MODULE_MAX,
-};
-
-enum {
-	MSM_CAMERA_EFFECT_MODE_OFF,
-	MSM_CAMERA_EFFECT_MODE_MONO,
-	MSM_CAMERA_EFFECT_MODE_NEGATIVE,
-	MSM_CAMERA_EFFECT_MODE_SOLARIZE,
-	MSM_CAMERA_EFFECT_MODE_SEPIA,
-	MSM_CAMERA_EFFECT_MODE_POSTERIZE,
-	MSM_CAMERA_EFFECT_MODE_WHITEBOARD,
-	MSM_CAMERA_EFFECT_MODE_BLACKBOARD,
-	MSM_CAMERA_EFFECT_MODE_AQUA,
-	MSM_CAMERA_EFFECT_MODE_EMBOSS,
-	MSM_CAMERA_EFFECT_MODE_SKETCH,
-	MSM_CAMERA_EFFECT_MODE_NEON,
-	MSM_CAMERA_EFFECT_MODE_MAX
-};
-
-enum {
-	MSM_CAMERA_WB_MODE_AUTO,
-	MSM_CAMERA_WB_MODE_CUSTOM,
-	MSM_CAMERA_WB_MODE_INCANDESCENT,
-	MSM_CAMERA_WB_MODE_FLUORESCENT,
-	MSM_CAMERA_WB_MODE_WARM_FLUORESCENT,
-	MSM_CAMERA_WB_MODE_DAYLIGHT,
-	MSM_CAMERA_WB_MODE_CLOUDY_DAYLIGHT,
-	MSM_CAMERA_WB_MODE_TWILIGHT,
-	MSM_CAMERA_WB_MODE_SHADE,
-	MSM_CAMERA_WB_MODE_OFF,
-	MSM_CAMERA_WB_MODE_MAX
-};
-
-enum {
-	MSM_CAMERA_SCENE_MODE_OFF,
-	MSM_CAMERA_SCENE_MODE_AUTO,
-	MSM_CAMERA_SCENE_MODE_LANDSCAPE,
-	MSM_CAMERA_SCENE_MODE_SNOW,
-	MSM_CAMERA_SCENE_MODE_BEACH,
-	MSM_CAMERA_SCENE_MODE_SUNSET,
-	MSM_CAMERA_SCENE_MODE_NIGHT,
-	MSM_CAMERA_SCENE_MODE_PORTRAIT,
-	MSM_CAMERA_SCENE_MODE_BACKLIGHT,
-	MSM_CAMERA_SCENE_MODE_SPORTS,
-	MSM_CAMERA_SCENE_MODE_ANTISHAKE,
-	MSM_CAMERA_SCENE_MODE_FLOWERS,
-	MSM_CAMERA_SCENE_MODE_CANDLELIGHT,
-	MSM_CAMERA_SCENE_MODE_FIREWORKS,
-	MSM_CAMERA_SCENE_MODE_PARTY,
-	MSM_CAMERA_SCENE_MODE_NIGHT_PORTRAIT,
-	MSM_CAMERA_SCENE_MODE_THEATRE,
-	MSM_CAMERA_SCENE_MODE_ACTION,
-	MSM_CAMERA_SCENE_MODE_AR,
-	MSM_CAMERA_SCENE_MODE_FACE_PRIORITY,
-	MSM_CAMERA_SCENE_MODE_BARCODE,
-	MSM_CAMERA_SCENE_MODE_HDR,
-	MSM_CAMERA_SCENE_MODE_MAX
 };
 
 enum csid_cfg_type_t {
@@ -214,11 +142,6 @@ enum camera_vreg_type {
 	REG_LDO,
 	REG_VS,
 	REG_GPIO,
-};
-
-enum sensor_af_t {
-	SENSOR_AF_FOCUSSED,
-	SENSOR_AF_NOT_FOCUSSED,
 };
 
 struct msm_sensor_power_setting {
@@ -249,7 +172,6 @@ struct msm_camera_sensor_slave_info {
 struct msm_camera_i2c_reg_array {
 	uint16_t reg_addr;
 	uint16_t reg_data;
-	uint32_t delay;
 };
 
 struct msm_camera_i2c_reg_setting {
@@ -335,7 +257,7 @@ struct msm_sensor_info_t {
 	int32_t     subdev_id[SUB_MODULE_MAX];
 };
 
-/*                                                          */
+/* LGE_CHANGE_S, OIS interface, 2013-05-29, kh.kang@lge.com */
 struct msm_sensor_ois_info_t{
 	char ois_provider[MAX_SENSOR_NAME];
 	int16_t gyro[2];
@@ -358,7 +280,7 @@ enum ois_ver_t {
 	OIS_VER_DEBUG
 };
 
-/*                                                          */
+/* LGE_CHANGE_E, OIS interface, 2013-05-29, kh.kang@lge.com */
 struct camera_vreg_t {
 	const char *reg_name;
 	enum camera_vreg_type type;
@@ -385,7 +307,7 @@ struct msm_sensor_init_params {
 	enum camb_position_t position;
 	/* sensor mount angle */
 	uint32_t            sensor_mount_angle;
-	int					ois_supported; /*                                                       */
+	int					ois_supported; /* LGE_CHANGE, OIS validity, 2013-06-26, kh.kang@lge.com */
 };
 
 struct sensorb_cfg_data {
@@ -393,7 +315,7 @@ struct sensorb_cfg_data {
 	union {
 		struct msm_sensor_info_t      sensor_info;
 		struct msm_sensor_init_params sensor_init_params;
-		struct msm_sensor_ois_info_t	ois_info;	/*                                                        */
+		struct msm_sensor_ois_info_t	ois_info;	/* LGE_CHANGE, OIS stats, 2013-04-09, sungmin.woo@lge.com */
 		void                         *setting;
 	} cfg;
 };
@@ -420,19 +342,18 @@ enum eeprom_cfg_type_t {
 	CFG_EEPROM_READ_CAL_DATA,
 	CFG_EEPROM_WRITE_DATA,
 };
-
 struct eeprom_get_t {
-	uint32_t num_bytes;
+	uint16_t num_bytes;
 };
 
 struct eeprom_read_t {
 	uint8_t *dbuffer;
-	uint32_t num_bytes;
+	uint16_t num_bytes;
 };
 
 struct eeprom_write_t {
 	uint8_t *dbuffer;
-	uint32_t num_bytes;
+	uint16_t num_bytes;
 };
 
 struct msm_eeprom_cfg_data {
@@ -461,22 +382,11 @@ enum msm_sensor_cfg_type_t {
 	CFG_SET_RESOLUTION,
 	CFG_SET_STOP_STREAM,
 	CFG_SET_START_STREAM,
-	CFG_SET_SATURATION,
-	CFG_SET_CONTRAST,
-	CFG_SET_SHARPNESS,
-	CFG_SET_ISO,
-	CFG_SET_EXPOSURE_COMPENSATION,
-	CFG_SET_ANTIBANDING,
-	CFG_SET_BESTSHOT_MODE,
-	CFG_SET_EFFECT,
-	CFG_SET_WHITE_BALANCE,
-	CFG_SET_AUTOFOCUS,
-	CFG_CANCEL_AUTOFOCUS,
-	CFG_OIS_ON,					/*                                                  */
-	CFG_OIS_OFF,				/*                                                  */
-	CFG_GET_OIS_INFO,			/*                                                        */
-	CFG_SET_OIS_MODE,   		/*                                                        */
-	CFG_OIS_MOVE_LENS			/*                                                        */
+	CFG_OIS_ON,					/* LGE_CHANGE, OIS, 2013-03-11, sungmin.woo@lge.com */
+	CFG_OIS_OFF,				/* LGE_CHANGE, OIS, 2013-03-11, sungmin.woo@lge.com */
+	CFG_GET_OIS_INFO,			/* LGE_CHANGE, OIS stats, 2013-04-09, sungmin.woo@lge.com */
+	CFG_SET_OIS_MODE,   		/* LGE_CHANGE, OIS interface, 2013-05-29, kh.kang@lge.com */
+	CFG_OIS_MOVE_LENS			/* LGE_CHANGE, OIS interface, 2013-06-20, kh.kang@lge.com */
 };
 
 enum msm_actuator_cfg_type_t {
@@ -484,7 +394,6 @@ enum msm_actuator_cfg_type_t {
 	CFG_SET_ACTUATOR_INFO,
 	CFG_SET_DEFAULT_FOCUS,
 	CFG_MOVE_FOCUS,
-	CFG_SET_POSITION,
 };
 
 enum actuator_type {
@@ -607,30 +516,15 @@ struct msm_actuator_reg_params_t {
 
 enum msm_camera_led_config_t {
 	MSM_CAMERA_LED_OFF,
-	MSM_CAMERA_LED_LOW,		//For pre-Flash, Snapshot
+	MSM_CAMERA_LED_LOW,
 	MSM_CAMERA_LED_HIGH,
 	MSM_CAMERA_LED_INIT,
 	MSM_CAMERA_LED_RELEASE,
-/*                                                              */
-	MSM_CAMERA_LED_HIGH_20P,
-	MSM_CAMERA_LED_HIGH_40P,
-	MSM_CAMERA_LED_HIGH_60P,	
-	MSM_CAMERA_LED_HIGH_80P,	
-/*                                                              */
-
-#if 1 //                                              
-/*           
-                                    
-                                
- */
-	MSM_CAMERA_LED_TORCH,	//For torch, Video recording
-#endif
+	MSM_CAMERA_LED_LOW_MIN_CURRENT,/* LGE_CHANGE, To set lowest flash current for DCM, 2013-07-08, jinw.kim@lge.com */
 };
 
 struct msm_camera_led_cfg_t {
 	enum msm_camera_led_config_t cfgtype;
-	uint32_t torch_current;
-	uint32_t flash_current[2];
 };
 
 #define VIDIOC_MSM_SENSOR_CFG \
@@ -656,9 +550,6 @@ struct msm_camera_led_cfg_t {
 
 #define VIDIOC_MSM_EEPROM_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 8, struct msm_eeprom_cfg_data)
-
-#define VIDIOC_MSM_SENSOR_GET_AF_STATUS \
-	_IOWR('V', BASE_VIDIOC_PRIVATE + 9, uint32_t)
 
 #define MSM_V4L2_PIX_FMT_META v4l2_fourcc('M', 'E', 'T', 'A') /* META */
 

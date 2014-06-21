@@ -377,8 +377,7 @@ EXPORT_SYMBOL_GPL(device_set_wakeup_enable);
 static void wakeup_source_activate(struct wakeup_source *ws)
 {
 	unsigned int cec;
-#ifdef CONFIG_MACH_MSM8974_B1_KR
-	extern int boost_freq;
+#ifdef CONFIG_LGE_PM
 	extern bool suspend_marker_entry;
 	unsigned int cnt, inpr;
 	bool wakeup_pending = true;
@@ -391,12 +390,6 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 	}
 #endif
 
-	/*
-	 * active wakeup source should bring the system
-	 * out of PM_SUSPEND_FREEZE state
-	 */
-	freeze_wake();
-
 	ws->active = true;
 	ws->active_count++;
 	ws->last_time = ktime_get();
@@ -408,16 +401,12 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 
 	trace_wakeup_source_activate(ws->name, cec);
 
-#ifdef CONFIG_MACH_MSM8974_B1_KR
+#ifdef CONFIG_LGE_PM
 	if (suspend_marker_entry) {
 		if (!wakeup_pending) {
-			if (boost_freq == 1) {
-				if (!strcmp(ws->name, "touch_irq") || !strcmp(ws->name, "hall_ic_wakeups")){
-					printk(KERN_ERR "ws->name=%s, boost_Freq=%d\n", ws->name, boost_freq);
-					boost_freq++;
-					printk(KERN_ERR "ws->name=%s, boost_Freq=%d\n", ws->name, boost_freq);
-				}
-			}
+			split_counters(&cnt, &inpr);
+			printk(KERN_ERR "%s: %s, cnt:%d, saved_cnt:%d, inpr:%d\n",
+				__func__, ws->name, cnt, saved_count, inpr);
 		}
 	}
 #endif
@@ -824,54 +813,6 @@ void pm_wakep_autosleep_enabled(bool set)
 	rcu_read_unlock();
 }
 #endif /* CONFIG_PM_AUTOSLEEP */
-
-#ifdef CONFIG_ZERO_WAIT_DEBUGFS
-int dump_wakeup_source_list(char *buf, size_t max, int which)
-{
-	unsigned long flags;
-	int count = 0;
-	struct wakeup_source *ws;
-
-	switch (which) {
-	case 2:
-		list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
-			spin_lock_irqsave(&ws->lock, flags);
-			count += scnprintf(buf + count, max - count,
-					"%s ws name = %s\n",
-					ws->active ? "[ active ]" : "[deactive]",
-					ws->name);
-			spin_unlock_irqrestore(&ws->lock, flags);
-		}
-		break;
-
-	case 1:
-		list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
-			spin_lock_irqsave(&ws->lock, flags);
-			if (ws->active) {
-				count += scnprintf(buf + count, max - count,
-						"[ active ] ws name = %s\n", ws->name);
-			}
-			spin_unlock_irqrestore(&ws->lock, flags);
-		}
-		break;
-
-	case 0:
-		list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
-			spin_lock_irqsave(&ws->lock, flags);
-			if (!ws->active) {
-				count += scnprintf(buf + count, max - count,
-						"[deactive] ws name = %s\n", ws->name);
-			}
-			spin_unlock_irqrestore(&ws->lock, flags);
-		}
-		break;
-
-	default:
-		break;
-	}
-	return count;
-}
-#endif /* CONFIG_ZERO_WAIT_DEBUGFS */
 
 static struct dentry *wakeup_sources_stats_dentry;
 

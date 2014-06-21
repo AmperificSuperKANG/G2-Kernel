@@ -29,9 +29,6 @@
 #include "mdss_mdp_formats.h"
 #include "mdss_debug.h"
 
-#ifdef CONFIG_MACH_LGE
-#define QMC_PATCH
-#endif
 enum {
 	MDP_INTR_VSYNC_INTF_0,
 	MDP_INTR_VSYNC_INTF_1,
@@ -203,20 +200,14 @@ irqreturn_t mdss_mdp_isr(int irq, void *ptr)
 		mdss_misr_crc_collect(mdata, DISPLAY_MISR_HDMI);
 	}
 
-	if (isr & MDSS_MDP_INTR_WB_0_DONE) {
+	if (isr & MDSS_MDP_INTR_WB_0_DONE)
 		mdss_mdp_intr_done(MDP_INTR_WB_0);
-		mdss_misr_crc_collect(mdata, DISPLAY_MISR_MDP);
-	}
 
-	if (isr & MDSS_MDP_INTR_WB_1_DONE) {
+	if (isr & MDSS_MDP_INTR_WB_1_DONE)
 		mdss_mdp_intr_done(MDP_INTR_WB_1);
-		mdss_misr_crc_collect(mdata, DISPLAY_MISR_MDP);
-	}
 
-	if (isr & MDSS_MDP_INTR_WB_2_DONE) {
+	if (isr & MDSS_MDP_INTR_WB_2_DONE)
 		mdss_mdp_intr_done(MDP_INTR_WB_2);
-		mdss_misr_crc_collect(mdata, DISPLAY_MISR_MDP);
-	}
 
 mdp_isr_done:
 	hist_isr = MDSS_MDP_REG_READ(MDSS_MDP_REG_HIST_INTR_STATUS);
@@ -246,20 +237,6 @@ struct mdss_mdp_format_params *mdss_mdp_get_format_params(u32 format)
 	return NULL;
 }
 
-void mdss_mdp_intersect_rect(struct mdss_mdp_img_rect *res_rect,
-	const struct mdss_mdp_img_rect *dst_rect,
-	const struct mdss_mdp_img_rect *sci_rect)
-{
-	int l = max(dst_rect->x, sci_rect->x);
-	int t = max(dst_rect->y, sci_rect->y);
-	int r = min((dst_rect->x + dst_rect->w), (sci_rect->x + sci_rect->w));
-	int b = min((dst_rect->y + dst_rect->h), (sci_rect->y + sci_rect->h));
-
-	if (r < l || b < t)
-		*res_rect = (struct mdss_mdp_img_rect){0, 0, 0, 0};
-	else
-		*res_rect = (struct mdss_mdp_img_rect){l, t, (r-l), (b-t)};
-}
 int mdss_mdp_get_rau_strides(u32 w, u32 h,
 			       struct mdss_mdp_format_params *fmt,
 			       struct mdss_mdp_plane_sizes *ps)
@@ -463,14 +440,9 @@ int mdss_mdp_put_img(struct mdss_mdp_img_data *data)
 	struct ion_client *iclient = mdss_get_ionclient();
 	if (data->flags & MDP_MEMORY_ID_TYPE_FB) {
 		pr_debug("fb mem buf=0x%x\n", data->addr);
-#ifdef QMC_PATCH
-		/*           
-                                          
-                                     
-   */
-		if (data->srcp_file != NULL)
-#endif
+		if(data->srcp_file!=NULL) {
 			fput_light(data->srcp_file, data->p_need);
+		}
 		data->srcp_file = NULL;
 	} else if (data->srcp_file) {
 		pr_debug("pmem buf=0x%x\n", data->addr);
@@ -602,9 +574,9 @@ int mdss_mdp_get_img(struct msmfb_data *img, struct mdss_mdp_img_data *data)
 
 int mdss_mdp_calc_phase_step(u32 src, u32 dst, u32 *out_phase)
 {
-	u32 unit, residue;
+	u32 unit, residue, result;
 
-	if (dst == 0)
+	if (src == 0 || dst == 0)
 		return -EINVAL;
 
 	unit = 1 << PHASE_STEP_SHIFT;
@@ -612,8 +584,13 @@ int mdss_mdp_calc_phase_step(u32 src, u32 dst, u32 *out_phase)
 
 	/* check if overflow is possible */
 	if (src > dst) {
-		residue = *out_phase & (unit - 1);
-		if (residue && ((residue * dst) < (unit - residue)))
+		residue = *out_phase - unit;
+		result = (residue * dst) + residue;
+
+		while (result > (unit + (unit >> 1)))
+			result -= unit;
+
+		if ((result > residue) && (result < unit))
 			return -EOVERFLOW;
 	}
 

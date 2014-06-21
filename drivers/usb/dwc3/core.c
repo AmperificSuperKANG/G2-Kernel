@@ -59,8 +59,12 @@
 
 #include "debug.h"
 
-#if defined(CONFIG_MACH_MSM8974_G2_DCM)\
+#if defined(CONFIG_MACH_MSM8974_G2_SPR)\
+	|| defined(CONFIG_MACH_MSM8974_G2_DCM)\
 	|| defined(CONFIG_MACH_MSM8974_G2_KDDI)\
+	|| defined(CONFIG_MACH_MSM8974_G2_OPEN_AME)\
+	|| defined(CONFIG_MACH_MSM8974_G2_OPEN_COM)\
+	|| defined(CONFIG_MACH_MSM8974_G2_TEL_AU)\
 	|| defined(CONFIG_MACH_MSM8974_VU3_KR)
 static char *maximum_speed = "high";
 #else
@@ -117,33 +121,7 @@ void dwc3_set_mode(struct dwc3 *dwc, u32 mode)
 	reg = dwc3_readl(dwc->regs, DWC3_GCTL);
 	reg &= ~(DWC3_GCTL_PRTCAPDIR(DWC3_GCTL_PRTCAP_OTG));
 	reg |= DWC3_GCTL_PRTCAPDIR(mode);
-	/*
-	 * Set this bit so that device attempts three more times at SS, even
-	 * if it failed previously to operate in SS mode.
-	 */
-	reg |= DWC3_GCTL_U2RSTECN;
-	if (mode == DWC3_GCTL_PRTCAP_HOST) {
-		/*
-		 * Allow ITP generated off of ref clk based counter instead
-		 * of UTMI/ULPI clk based counter, when superspeed only is
-		 * active so that UTMI/ULPI PHY can be suspened.
-		 */
-		reg |= DWC3_GCTL_SOFITPSYNC;
-		reg &= ~(DWC3_GCTL_PWRDNSCALEMASK);
-		reg |= DWC3_GCTL_PWRDNSCALE(2);
-	} else if (mode == DWC3_GCTL_PRTCAP_DEVICE) {
-		reg &= ~(DWC3_GCTL_PWRDNSCALEMASK);
-		reg |= DWC3_GCTL_PWRDNSCALE(2);
-		reg &= ~(DWC3_GCTL_SOFITPSYNC);
-	}
-	reg |= DWC3_GCTL_U2EXIT_LFPS;
 	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
-	reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
-	reg |= DWC3_GUSB3PIPECTL_SUSPHY;
-	dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
-	reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
-	reg |= DWC3_GUSB2PHYCFG_SUSPHY;
-	dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);
 }
 
 /**
@@ -158,8 +136,6 @@ static void dwc3_core_soft_reset(struct dwc3 *dwc)
 	reg = dwc3_readl(dwc->regs, DWC3_GCTL);
 	reg |= DWC3_GCTL_CORESOFTRESET;
 	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
-
-	dwc3_notify_event(dwc, DWC3_CONTROLLER_RESET_EVENT);
 
 	/* Assert USB3 PHY reset */
 	reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
@@ -189,8 +165,6 @@ static void dwc3_core_soft_reset(struct dwc3 *dwc)
 	reg = dwc3_readl(dwc->regs, DWC3_GCTL);
 	reg &= ~DWC3_GCTL_CORESOFTRESET;
 	dwc3_writel(dwc->regs, DWC3_GCTL, reg);
-
-	dwc3_notify_event(dwc, DWC3_CONTROLLER_POST_RESET_EVENT);
 }
 
 /**
@@ -300,7 +274,7 @@ static int __devinit dwc3_alloc_event_buffers(struct dwc3 *dwc, unsigned length)
  *
  * Returns 0 on success otherwise negative errno.
  */
-int dwc3_event_buffers_setup(struct dwc3 *dwc)
+static int dwc3_event_buffers_setup(struct dwc3 *dwc)
 {
 	struct dwc3_event_buffer	*evt;
 	int				n;
@@ -363,7 +337,7 @@ static void dwc3_cache_hwparams(struct dwc3 *dwc)
  *
  * Returns 0 on success otherwise negative errno.
  */
-static int __ref dwc3_core_init(struct dwc3 *dwc)
+static int dwc3_core_init(struct dwc3 *dwc)
 {
 	unsigned long		timeout;
 	u32			reg;
@@ -507,22 +481,7 @@ void dwc3_post_host_reset_core_init(struct dwc3 *dwc)
 {
 	dwc3_core_init(dwc);
 	dwc3_gadget_restart(dwc);
-	dwc3_notify_event(dwc, DWC3_CONTROLLER_POST_INITIALIZATION_EVENT);
 }
-
-static void (*notify_event) (struct dwc3 *, unsigned);
-void dwc3_set_notifier(void (*notify)(struct dwc3 *, unsigned))
-{
-	notify_event = notify;
-}
-EXPORT_SYMBOL(dwc3_set_notifier);
-
-void dwc3_notify_event(struct dwc3 *dwc, unsigned event)
-{
-	if (dwc->notify_event)
-		dwc->notify_event(dwc, event);
-}
-EXPORT_SYMBOL(dwc3_notify_event);
 
 #define DWC3_ALIGN_MASK		(16 - 1)
 
@@ -555,7 +514,6 @@ static int __devinit dwc3_probe(struct platform_device *pdev)
 	if (!dev->coherent_dma_mask)
 		dev->coherent_dma_mask = DMA_BIT_MASK(64);
 
-	dwc->notify_event = notify_event;
 	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	if (!res) {
 		dev_err(dev, "missing IRQ\n");
@@ -616,6 +574,8 @@ static int __devinit dwc3_probe(struct platform_device *pdev)
 
 	dwc->needs_fifo_resize = of_property_read_bool(node, "tx-fifo-resize");
 	host_only_mode = of_property_read_bool(node, "host-only-mode");
+	dwc->no_set_vbus_power = of_property_read_bool(node,
+						"no-set-vbus-power");
 
 	pm_runtime_no_callbacks(dev);
 	pm_runtime_set_active(dev);
@@ -686,8 +646,6 @@ static int __devinit dwc3_probe(struct platform_device *pdev)
 		dev_err(dev, "failed to initialize debugfs\n");
 		goto err2;
 	}
-
-	dwc3_notify_event(dwc, DWC3_CONTROLLER_POST_INITIALIZATION_EVENT);
 
 	return 0;
 

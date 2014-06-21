@@ -13,7 +13,6 @@
 #define __Q6_ASM_V2_H__
 
 #include <mach/qdsp6v2/apr.h>
-#include <mach/qdsp6v2/rtac.h>
 #include <sound/apr_audio-v2.h>
 #include <linux/list.h>
 #include <linux/msm_ion.h>
@@ -54,7 +53,6 @@
 #define CMD_EOS            0x0003
 #define CMD_CLOSE          0x0004
 #define CMD_OUT_FLUSH      0x0005
-#define CMD_SUSPEND        0x0006
 
 /* bit 0:1 represents priority of stream */
 #define STREAM_PRIORITY_NORMAL	0x0000
@@ -72,7 +70,6 @@
 #define SYNC_IO_MODE	0x0001
 #define ASYNC_IO_MODE	0x0002
 #define COMPRESSED_IO	0x0040
-#define COMPRESSED_STREAM_IO	0x0080
 #define NT_MODE        0x0400
 
 #define NO_TIMESTAMP    0xFF00
@@ -101,7 +98,7 @@
 #define READDONE_IDX_SEQ_ID 10
 
 #define SOFT_PAUSE_PERIOD       30   /* ramp up/down for 30ms    */
-#define SOFT_PAUSE_STEP         0 /* Step value 0ms or 0us */
+#define SOFT_PAUSE_STEP         2000 /* Step value 2ms or 2000us */
 enum {
 	SOFT_PAUSE_CURVE_LINEAR = 0,
 	SOFT_PAUSE_CURVE_EXP,
@@ -109,7 +106,7 @@ enum {
 };
 
 #define SOFT_VOLUME_PERIOD       30   /* ramp up/down for 30ms    */
-#define SOFT_VOLUME_STEP         0 /* Step value 0ms or 0us */
+#define SOFT_VOLUME_STEP         2000 /* Step value 2ms or 2000us */
 enum {
 	SOFT_VOLUME_CURVE_LINEAR = 0,
 	SOFT_VOLUME_CURVE_EXP,
@@ -176,11 +173,10 @@ struct audio_client {
 	struct audio_port_data port[2];
 	wait_queue_head_t      cmd_wait;
 	wait_queue_head_t      time_wait;
-	int                    perf_mode;
+	bool                   perf_mode;
 	int					   stream_id;
 	/* audio cache operations fptr*/
 	int (*fptr_cache_ops)(struct audio_buffer *abuff, int cache_op);
-	atomic_t               unmap_cb_success;
 };
 
 void q6asm_audio_client_free(struct audio_client *ac);
@@ -246,10 +242,6 @@ int q6asm_memory_unmap(struct audio_client *ac, uint32_t buf_add,
 							int dir);
 
 int q6asm_unmap_cal_blocks(void);
-
-int q6asm_map_rtac_block(struct rtac_cal_block_data *cal_block);
-
-int q6asm_unmap_rtac_block(uint32_t *mem_map_handle);
 
 int q6asm_run(struct audio_client *ac, uint32_t flags,
 		uint32_t msw_ts, uint32_t lsw_ts);
@@ -400,9 +392,5 @@ int q6asm_media_format_block(struct audio_client *ac, uint32_t format);
 /* Send the meta data to remove initial and trailing silence */
 int q6asm_send_meta_data(struct audio_client *ac, uint32_t initial_samples,
 		uint32_t trailing_samples);
-
-/* Send the stream meta data to remove initial and trailing silence */
-int q6asm_stream_send_meta_data(struct audio_client *ac, uint32_t stream_id,
-		uint32_t initial_samples, uint32_t trailing_samples);
 
 #endif /* __Q6_ASM_H__ */

@@ -1,7 +1,7 @@
 /*
  * SDIO access interface for drivers - linux specific (pci only)
  *
- * Copyright (C) 1999-2013, Broadcom Corporation
+ * Copyright (C) 1999-2012, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmsdh_linux.c 414953 2013-07-26 17:36:27Z $
+ * $Id: bcmsdh_linux.c 384891 2013-02-13 13:39:09Z $
  */
 
 /**
@@ -49,6 +49,11 @@ extern void dhdsdio_isr(void * args);
 #include <dhd.h>
 #endif /* defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID) */
 
+#if defined(CUSTOMER_HW4) && defined(CONFIG_PM_SLEEP) && defined(PLATFORM_SLP)
+/* SLP_wakelock_alternative_code */
+struct device *pm_dev;
+#endif /* CUSTOMER_HW4 && CONFIG_PM_SLEEP && PLATFORM_SLP */
+
 /**
  * SDIO Host Controller info
  */
@@ -74,8 +79,6 @@ struct bcmsdh_hc {
 #endif /* defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID) */
 };
 static bcmsdh_hc_t *sdhcinfo = NULL;
-
-struct device *pm_dev;
 
 /* driver info, initialized when bcmsdh_register is called */
 static bcmsdh_driver_t drvinfo = {NULL, NULL};
@@ -164,12 +167,15 @@ int bcmsdh_probe(struct device *dev)
 	int irq = 0;
 	uint32 vendevid;
 	unsigned long irq_flags = 0;
+#if defined(CUSTOMER_HW4) && defined(CONFIG_PM_SLEEP) && defined(PLATFORM_SLP)
+	int ret = 0;
+#endif /* CUSTOMER_HW4 && CONFIG_PM_SLEEP && PLATFORM_SLP */
 
 #if !defined(BCMLXSDMMC) && defined(BCMPLATFORM_BUS) && !defined(BCMSPI_ANDROID)
 	pdev = to_platform_device(dev);
 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	irq = platform_get_irq(pdev, 0);
-	if (!r || irq < 0)
+	if (!r || irq == NO_IRQ)
 		return -ENXIO;
 #endif /* !defined(BCMLXSDMMC) && defined(BCMPLATFORM_BUS) && !defined(BCMSPI_ANDROID) */
 
@@ -177,15 +183,23 @@ int bcmsdh_probe(struct device *dev)
 #ifdef HW_OOB
 	irq_flags =
 		IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL | IORESOURCE_IRQ_SHAREABLE;
-#else
-	 irq_flags = IRQF_TRIGGER_FALLING;
+#else 
+//                                                                           
+ 	 //irq_flags = IRQF_TRIGGER_FALLING;
+	irq_flags =
+	 IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHEDGE | IORESOURCE_IRQ_SHAREABLE;
+//                                                               
 #endif /* HW_OOB */
 
 	/* Get customer specific OOB IRQ parametres: IRQ number as IRQ type */
 	irq = dhd_customer_oob_irq_map(&irq_flags);
+#if	defined(CONFIG_ARCH_RHEA) || defined(CONFIG_ARCH_CAPRI)
+	/* Do not disable this IRQ during suspend */
+	irq_flags |= IRQF_NO_SUSPEND;
+#endif /* defined(CONFIG_ARCH_RHEA) || defined(CONFIG_ARCH_CAPRI) */
 	if  (irq < 0) {
 		SDLX_MSG(("%s: Host irq is not defined\n", __FUNCTION__));
-		goto err;
+		return 1;
 	}
 #endif /* defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID) */
 	/* allocate SDIO Host Controller state info */
@@ -230,10 +244,12 @@ int bcmsdh_probe(struct device *dev)
 	sdhc->next = sdhcinfo;
 	sdhcinfo = sdhc;
 
-#if !defined(CONFIG_HAS_WAKELOCK) && (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 36))
-	if (!device_init_wakeup(dev, 1))
-		pm_dev = dev;
-#endif /* !CONFIG_HAS_WAKELOCK */
+#if defined(CUSTOMER_HW4) && defined(CONFIG_PM_SLEEP) && defined(PLATFORM_SLP)
+	/* SLP_wakelock_alternative_code */
+	pm_dev = sdhc->dev;
+	ret = device_init_wakeup(pm_dev, 1);
+	printf("%s : device_init_wakeup(pm_dev) enable, ret = %d\n", __func__, ret);
+#endif /* CUSTOMER_HW4 && CONFIG_PM_SLEEP && PLATFORM_SLP */
 
 	/* Read the vendor/device ID from the CIS */
 	vendevid = bcmsdh_query_device(sdh);
@@ -269,6 +285,7 @@ int bcmsdh_remove(struct device *dev)
 	osl_t *osh;
 	int sdhcinfo_null = false;
 
+
 	/* find the SDIO Host Controller state for this pdev and take it out from the list */
 	for (sdhc = sdhcinfo, prev = NULL; sdhc; sdhc = sdhc->next) {
 		if (sdhc->dev == (void *)dev) {
@@ -290,16 +307,14 @@ int bcmsdh_remove(struct device *dev)
 		return 0;
 	}
 
-	/* detach ch & sdhc if dev is valid */
+#if defined(CUSTOMER_HW4) && defined(CONFIG_PM_SLEEP) && defined(PLATFORM_SLP)
+	/* SLP_wakelock_alternative_code */
+	device_init_wakeup(pm_dev, 0);
+	printf("%s : device_init_wakeup(pm_dev) disable\n", __func__);
+#endif /* CUSTOMER_HW4 && CONFIG_PM_SLEEP && PLATFORM_SLP */
 	drvinfo.detach(sdhc->ch);
 	bcmsdh_detach(sdhc->osh, sdhc->sdh);
-
-#if !defined(CONFIG_HAS_WAKELOCK) && (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 36))
-	if (pm_dev) {
-		device_init_wakeup(pm_dev, 0);
-		pm_dev = NULL;
-	}
-#endif /* !CONFIG_HAS_WAKELOCK */
+	/* detach ch & sdhc if dev is valid */
 
 	if (sdhcinfo_null == true)
 		sdhcinfo = NULL;
@@ -428,10 +443,6 @@ bcmsdh_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* match this pci device with what we support */
 	/* we can't solely rely on this to believe it is our SDIO Host Controller! */
 	if (!bcmsdh_chipmatch(pdev->vendor, pdev->device)) {
-		if (pdev->vendor == VENDOR_BROADCOM) {
-			SDLX_MSG(("%s: Unknown Broadcom device (vendor: %#x, device: %#x).\n",
-				__FUNCTION__, pdev->vendor, pdev->device));
-		}
 		return -ENODEV;
 	}
 
@@ -673,7 +684,13 @@ int bcmsdh_register_oob_intr(void * dhdp)
 		if (error)
 			return -ENODEV;
 
-		error = enable_irq_wake(sdhcinfo->oob_irq);
+#if defined(CONFIG_ARCH_RHEA) || defined(CONFIG_ARCH_CAPRI)
+		if (device_may_wakeup(sdhcinfo->dev)) {
+#endif
+			error = enable_irq_wake(sdhcinfo->oob_irq);
+#if defined(CONFIG_ARCH_RHEA) || defined(CONFIG_ARCH_CAPRI)
+		}
+#endif
 		if (error)
 			SDLX_MSG(("%s enable_irq_wake error=%d \n", __FUNCTION__, error));
 		sdhcinfo->oob_irq_registered = TRUE;
@@ -690,10 +707,16 @@ void bcmsdh_set_irq(int flag)
 		sdhcinfo->oob_irq_enable_flag = flag;
 		if (flag) {
 			enable_irq(sdhcinfo->oob_irq);
-			enable_irq_wake(sdhcinfo->oob_irq);
+#if defined(CONFIG_ARCH_RHEA) || defined(CONFIG_ARCH_CAPRI)
+			if (device_may_wakeup(sdhcinfo->dev))
+#endif
+				enable_irq_wake(sdhcinfo->oob_irq);
 		} else {
 #if !(defined(BCMSPI_ANDROID) && defined(CUSTOMER_HW4) && defined(CONFIG_NKERNEL))
-			disable_irq_wake(sdhcinfo->oob_irq);
+#if defined(CONFIG_ARCH_RHEA) || defined(CONFIG_ARCH_CAPRI)
+			if (device_may_wakeup(sdhcinfo->dev))
+#endif
+				disable_irq_wake(sdhcinfo->oob_irq);
 #endif /* !defined(BCMSPI_ANDROID) */
 			disable_irq(sdhcinfo->oob_irq);
 		}
@@ -709,14 +732,6 @@ void bcmsdh_unregister_oob_intr(void)
 		free_irq(sdhcinfo->oob_irq, NULL);
 		sdhcinfo->oob_irq_registered = FALSE;
 	}
-}
-
-bool bcmsdh_is_oob_intr_registered(void)
-{
-	if (sdhcinfo)
-		return sdhcinfo->oob_irq_registered;
-	else
-		return FALSE;
 }
 #endif /* defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID) */
 
@@ -755,10 +770,6 @@ module_param(sd_f2_blocksize, int, 0);
 #ifdef BCMSDIOH_STD
 extern int sd_uhsimode;
 module_param(sd_uhsimode, int, 0);
-extern uint sd_tuning_period;
-module_param(sd_tuning_period, uint, 0);
-extern int sd_delay_value;
-module_param(sd_delay_value, uint, 0);
 #endif
 
 #ifdef BCMSDIOH_TXGLOM

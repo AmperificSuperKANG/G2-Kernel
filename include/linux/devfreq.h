@@ -19,9 +19,6 @@
 
 #define DEVFREQ_NAME_LEN 16
 
-/* As defined in the kgsl device header */
-#define KGSL_STATE_SLUMBER 0x00000080
-
 struct devfreq;
 
 /**
@@ -55,9 +52,8 @@ struct devfreq_dev_status {
  */
 #define DEVFREQ_FLAG_LEAST_UPPER_BOUND		0x1
 
-#define DEVFREQ_FLAG_FAST_HINT			0x2
-#define DEVFREQ_FLAG_SLOW_HINT			0x4
-#define DEVFREQ_FLAG_WAKEUP_MAXFREQ		0x8
+#define DEVFREQ_FLAG_FAST_HINT	0x2
+#define DEVFREQ_FLAG_SLOW_HINT	0x4
 
 /**
  * struct devfreq_governor_data - mapping to per device governor data
@@ -188,7 +184,6 @@ struct devfreq {
 	char governor_name[DEVFREQ_NAME_LEN];
 	struct notifier_block nb;
 	struct delayed_work work;
-	uint32_t state;
 
 	unsigned long previous_freq;
 
@@ -232,9 +227,6 @@ extern int devfreq_unregister_opp_notifier(struct device *dev,
  *			the governor may consider slowing the frequency down.
  *			Specify 0 to use the default. Valid value = 0 to 100.
  *			downdifferential < upthreshold must hold.
- * @simple_scaling:	Setting this flag will scale the clocks up only if the
- *			load is above @upthreshold and will scale the clocks
- *			down only if the load is below @downdifferential.
  *
  * If the fed devfreq_simple_ondemand_data pointer is NULL to the governor,
  * the governor uses the default values.
@@ -242,7 +234,6 @@ extern int devfreq_unregister_opp_notifier(struct device *dev,
 struct devfreq_simple_ondemand_data {
 	unsigned int upthreshold;
 	unsigned int downdifferential;
-	unsigned int simple_scaling;
 };
 #endif
 

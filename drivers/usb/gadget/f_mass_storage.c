@@ -316,17 +316,16 @@ static const char fsg_string_interface[] = "Mass Storage";
 
 #ifdef CONFIG_USB_G_LGE_ANDROID_AUTORUN
 
-/*                                       
-                                  
-                                   
+/* Belows are LGE-customized SCSI cmd and
+ * sub-cmd for autorun processing.
+ * 2011-03-09, hyunhui.park@lge.com
  */
 #define SC_LGE_SPE              0xF1
 #define SUB_CODE_MODE_CHANGE    0x01
 #define SUB_CODE_GET_VALUE      0x02
 #define SUB_CODE_PROBE_DEV      0xff
-/*                                          */
-#if 0
-#define SUB_CODE_SET_VALUE	0x05
+#if 0 //def CONFIG_USB_G_LGE_ANDROID_AUTORUN_VZW
+#define SUB_CODE_SET_VALUE	0x05 
 #endif
 #define TYPE_MOD_CHG_TO_ACM     0x01
 #define TYPE_MOD_CHG_TO_UMS     0x02
@@ -344,10 +343,9 @@ static const char fsg_string_interface[] = "Mass Storage";
 #define TYPE_MOD_CHG2_TO_TET    0x87
 #define TYPE_MOD_CHG2_TO_FDG    0x88
 #define TYPE_MOD_CHG2_TO_PTP    0x89
-/*                                          */
-#if 0
-#define TYPE_SET_VAL_USB_DRV_INSTALLED		0x30
-#define TYPE_SET_VAL_USB_DRV_UNINSTALLED	0x31
+#if 0 // def CONFIG_USB_G_LGE_ANDROID_AUTORUN_VZW
+#define TYPE_SET_VAL_USB_DRV_INSTALLED		0x30 
+#define TYPE_SET_VAL_USB_DRV_UNINSTALLED	0x31 
 #endif
 /* ACK TO SEND HOST PC */
 #define ACK_STATUS_TO_HOST      0x10
@@ -362,7 +360,7 @@ static const char fsg_string_interface[] = "Mass Storage";
 #define SUB_ACK_STATUS_CGO      0x04
 #define SUB_ACK_STATUS_TET      0x05
 #define SUB_ACK_STATUS_PTP      0x06
-#endif /*                                  */
+#endif /* CONFIG_USB_G_LGE_ANDROID_AUTORUN */
 
 #include "storage_common.c"
 
@@ -375,9 +373,9 @@ static int csw_hack_sent;
 struct fsg_dev;
 struct fsg_common;
 #ifdef CONFIG_USB_G_LGE_ANDROID_AUTORUN
-/*                                             
-                                     
-                                   
+/* Belows are uevent string to communicate with
+ * android framework and application.
+ * 2011-03-09, hyunhui.park@lge.com
  */
 static char *envp_ack[2] = {"AUTORUN=ACK", NULL};
 
@@ -397,7 +395,7 @@ static char *envp_mode[][2] = {
 };
 #endif
 #ifdef CONFIG_USB_G_LGE_ANDROID_AUTORUN_VZW
-static char *usb_drv_envp_mode[][2] = {
+static char *usb_drv_envp_mode[][2] = {  
 	{"USB_DRV=uninstalled", NULL},
 	{"USB_DRV=installed", NULL},
 };
@@ -406,7 +404,7 @@ static char *usb_drv_envp_mode[][2] = {
 static char *envp_mode[2] = {"AUTORUN=change_mode", NULL};
 #endif
 #ifdef CONFIG_USB_G_LGE_ANDROID_AUTORUN_VZW
-enum usb_drv_state{
+enum usb_drv_state{ 
 	USB_DRV_UNINSTALLED = 0,
 	USB_DRV_INSTALLED,
 };
@@ -540,12 +538,12 @@ struct fsg_common {
 	 */
 	char inquiry_string[8 + 16 + 4 + 1];
 #ifdef CONFIG_USB_G_LGE_ANDROID_AUTORUN
-	/*                         */
+	/* LGE-customized USB mode */
 	enum chg_mode_state mode_state;
 #endif
 #ifdef CONFIG_USB_G_LGE_ANDROID_AUTORUN_VZW
-	/* VZW - check usb driver installed or not */
-	enum usb_drv_state drv_state;
+        /* VZW - check usb driver installed or not */
+        enum usb_drv_state drv_state;
 #endif
 	struct kref		ref;
 };
@@ -884,6 +882,7 @@ static int sleep_thread(struct fsg_common *common)
 	spin_lock_irq(&common->lock);
 	common->thread_wakeup_needed = 0;
 	spin_unlock_irq(&common->lock);
+	smp_rmb();	/* ensure the latest bh->state is visible */
 	return rc;
 }
 
@@ -1439,8 +1438,8 @@ static int do_inquiry(struct fsg_common *common, struct fsg_buffhd *bh)
 	return 36;
 }
 #ifdef CONFIG_USB_G_LGE_ANDROID_AUTORUN
-/*                                                           
-                                   
+/* Add function which handles LGE-customized command from PC.
+ * 2011-03-09, hyunhui.park@lge.com
  */
 static int do_ack_status(struct fsg_common *common, struct fsg_buffhd *bh, u8 ack)
 {
@@ -1503,9 +1502,9 @@ static int do_get_serial(struct fsg_common *common, struct fsg_buffhd *bh)
 	if (hex2bin(imei_hex, imei_temp, 7) < 0)
 		pr_err("%s [AUTORUN] : Error on hex2bin\n", __func__);
 
-	for (i = 0; i < 7; i++)
+	for (i = 0; i < 7; i++) {
 		buf[6-i] = imei_hex[i];
-
+	}
 	pr_info("[AUTORUN] %s: meid: %02x%02x%02x%02x%02x%02x%02x\n", __func__,
 					buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6]);
 	return 7;
@@ -2322,16 +2321,12 @@ static int check_command_size_in_blocks(struct fsg_common *common,
 }
 
 #ifdef CONFIG_USB_G_LGE_ANDROID_AUTORUN_VZW
-void send_drv_state_uevent(int installed)
-{
-	pr_info("%s: VZW_USB_DRV_STATE - %s\n", __func__,
-			installed ? "installed" : "uninstalled");
-	if (installed)
-		kobject_uevent_env(&autorun_device.this_device->kobj,
-				KOBJ_CHANGE, (char **)(&usb_drv_envp_mode[USB_DRV_INSTALLED]));
-	else
-		kobject_uevent_env(&autorun_device.this_device->kobj,
-				KOBJ_CHANGE, (char **)(&usb_drv_envp_mode[USB_DRV_UNINSTALLED]));
+void send_drv_state_uevent(int installed){        
+       pr_info("%s: VZW_USB_DRV_STATE - %s\n", __func__, installed?"installed":"uninstalled");
+       if (installed)
+            kobject_uevent_env(&autorun_device.this_device->kobj, KOBJ_CHANGE, (char **)(&usb_drv_envp_mode[USB_DRV_INSTALLED]));
+       else
+            kobject_uevent_env(&autorun_device.this_device->kobj, KOBJ_CHANGE, (char **)(&usb_drv_envp_mode[USB_DRV_UNINSTALLED]));
 }
 EXPORT_SYMBOL(send_drv_state_uevent);
 #endif
@@ -2491,27 +2486,25 @@ static int do_scsi_command(struct fsg_common *common)
 			common->mode_state = MODE_STATE_PROBE_DEV;
 			reply = 0;
 			break;
-/*                                          */
-#if 0
-		case SUB_CODE_SET_VALUE:
-			switch (common->cmnd[2]) {
-			case TYPE_SET_VAL_USB_DRV_UNINSTALLED:
-				common->drv_state = USB_DRV_UNINSTALLED;
-				break;
-			case TYPE_SET_VAL_USB_DRV_INSTALLED:
-				common->drv_state = USB_DRV_INSTALLED;
-				break;
-			default:
-				common->drv_state = USB_DRV_UNINSTALLED;
-			}
-			printk(KERN_ERR "LG_FW USB_DRV_INSTALLED \n");
-			pr_info("%s: VZW_USB_DRV_STATE - %s\n", __func__, common->drv_state ?
-					"installed" : "uninstalled");
-			kobject_uevent_env(&autorun_device.this_device->kobj,
-					KOBJ_CHANGE, (char **)(&usb_drv_envp_mode[common->drv_state]));
-			already_acked = 0;
-			reply = 0;
-			break;
+#if 0 //def CONFIG_USB_G_LGE_ANDROID_AUTORUN_VZW
+                case SUB_CODE_SET_VALUE: 
+                        switch (common->cmnd[2]) {
+                        case TYPE_SET_VAL_USB_DRV_UNINSTALLED:
+				        common->drv_state = USB_DRV_UNINSTALLED; 
+                        break;
+			  			case TYPE_SET_VAL_USB_DRV_INSTALLED:
+						common->drv_state = USB_DRV_INSTALLED;
+                        break;
+                        default:
+                        common->drv_state = USB_DRV_UNINSTALLED;
+                        }
+						printk(KERN_ERR "LG_FW USB_DRV_INSTALLED \n");
+                        pr_info("%s: VZW_USB_DRV_STATE - %s\n", __func__, common->drv_state?"installed":"uninstalled"); 
+						kobject_uevent_env(&autorun_device.this_device->kobj,
+                        KOBJ_CHANGE, (char **)(&usb_drv_envp_mode[common->drv_state]));
+                        already_acked = 0;
+                        reply = 0;
+                        break;
 #endif
 		default:
 			common->mode_state = MODE_STATE_UNKNOWN;
@@ -2519,7 +2512,7 @@ static int do_scsi_command(struct fsg_common *common)
 			break;
 		} /* switch (common->cmnd[1]) */
 		break;
-#endif /*                                  */
+#endif /* CONFIG_USB_G_LGE_ANDROID_AUTORUN */
 
 	case MODE_SELECT:
 		common->data_size_from_cmnd = common->cmnd[4];

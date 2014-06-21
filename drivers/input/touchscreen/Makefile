@@ -6,7 +6,6 @@
 
 wm97xx-ts-y := wm97xx-core.o
 
-obj-$(CONFIG_TOUCHSCREEN_SWEEP2WAKE)	+= sweep2wake.o
 obj-$(CONFIG_TOUCHSCREEN_88PM860X)	+= 88pm860x-ts.o
 obj-$(CONFIG_TOUCHSCREEN_AD7877)	+= ad7877.o
 obj-$(CONFIG_TOUCHSCREEN_AD7879)	+= ad7879.o
@@ -15,7 +14,6 @@ obj-$(CONFIG_TOUCHSCREEN_AD7879_SPI)	+= ad7879-spi.o
 obj-$(CONFIG_TOUCHSCREEN_ADS7846)	+= ads7846.o
 obj-$(CONFIG_TOUCHSCREEN_ATMEL_MAXTOUCH)	+= atmel_maxtouch.o
 obj-$(CONFIG_TOUCHSCREEN_ATMEL_MXT)	+= atmel_mxt_ts.o
-obj-$(CONFIG_TOUCHSCREEN_ATMEL_S540)	+= atmel_s540.o
 obj-$(CONFIG_TOUCHSCREEN_ATMEL_TSADCC)	+= atmel_tsadcc.o
 obj-$(CONFIG_TOUCHSCREEN_AUO_PIXCIR)	+= auo-pixcir-ts.o
 obj-$(CONFIG_TOUCHSCREEN_BITSY)		+= h3600_ts_input.o
@@ -80,23 +78,14 @@ obj-$(CONFIG_TOUCHSCREEN_TPS6507X)	+= tps6507x-ts.o
 obj-$(CONFIG_TOUCHSCREEN_MSM_LEGACY)		+= msm_touch.o
 obj-$(CONFIG_TOUCHSCREEN_CY8C_TS)	+= cy8c_ts.o
 obj-$(CONFIG_TOUCHSCREEN_CYTTSP_I2C_QC)       += cyttsp-i2c-qc.o
-ifdef CONFIG_MACH_MSM8974_G2_KR
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_RMI4_I2C) +=f320_driver/synaptics/
-else
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_RMI4_I2C) +=synaptics/
-endif
 ifdef CONFIG_MACH_LGE
 ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_VU3EVB
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_VU3EVB) += lge_touch_core_vu3evb.o
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_VU3EVB) += touch_synaptics_vu3evb.o
 else
-ifdef CONFIG_MACH_MSM8974_G2_KR
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4) += f320_driver/lge_touch_core.o
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4) += f320_driver/touch_synaptics.o
-else
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4) += lge_touch_core.o
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4) += touch_synaptics.o
-endif
 endif
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4) += touch_synaptics_ds5_fw_upgrade.o
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4) += DS5/
@@ -106,7 +95,6 @@ ifndef CONFIG_MACH_LGE
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4)		+= synaptics_i2c_rmi4.o
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_RMI4_DEV)	+= synaptics_rmi_dev.o
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE) 	+= synaptics_fw_update.o
-obj-$(CONFIG_TOUCHSCREEN_GT9XX)		+= gt9xx/
 endif
 obj-$(CONFIG_TOUCHSCREEN_MMS136)	+= melfas_ts.o
 obj-$(CONFIG_TOUCHSCREEN_MMS136)	+= mms136_ISP_download.o

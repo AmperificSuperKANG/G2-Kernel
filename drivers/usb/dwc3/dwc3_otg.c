@@ -13,7 +13,6 @@
  * GNU General Public License for more details.
  */
 
-#include <linux/module.h>
 #include <linux/usb.h>
 #include <linux/usb/hcd.h>
 #include <linux/platform_device.h>
@@ -24,10 +23,6 @@
 #include "dwc3_otg.h"
 #include "io.h"
 #include "xhci.h"
-
-#ifdef CONFIG_FORCE_FAST_CHARGE
-#include <linux/fastchg.h>
-#endif
 
 #ifdef CONFIG_LGE_PM
 #include <mach/board_lge.h>
@@ -45,18 +40,9 @@
 #endif
 
 #if defined(CONFIG_USB_DWC3_MSM_VZW_SUPPORT)
-extern int lge_usb_config_finish;
-#endif
-
-#ifdef CONFIG_MACH_LGE
-struct workqueue_struct *touch_otg_wq;
-#endif
-
-#define VBUS_REG_CHECK_DELAY	(msecs_to_jiffies(1000))
-#define MAX_INVALID_CHRGR_RETRY 3
-static int max_chgr_retry_count = MAX_INVALID_CHRGR_RETRY;
-module_param(max_chgr_retry_count, int, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(max_chgr_retry_count, "Max invalid charger retry count");
+extern int lge_usb_config_finish;  
+#endif  
+struct workqueue_struct* touch_otg_wq;
 static void dwc3_otg_reset(struct dwc3_otg *dotg);
 
 static void dwc3_otg_notify_host_mode(struct usb_otg *otg, int host_mode);
@@ -93,19 +79,6 @@ static void dwc3_otg_set_host_regs(struct dwc3_otg *dotg)
 		reg = dwc3_readl(dwc->regs, DWC3_GCTL);
 		reg &= ~(DWC3_GCTL_PRTCAPDIR(DWC3_GCTL_PRTCAP_OTG));
 		reg |= DWC3_GCTL_PRTCAPDIR(DWC3_GCTL_PRTCAP_HOST);
-		/*
-		 * Allow ITP generated off of ref clk based counter instead
-		 * of UTMI/ULPI clk based counter, when superspeed only is
-		 * active so that UTMI/ULPI can be suspened.
-		 */
-		reg |= DWC3_GCTL_SOFITPSYNC;
-		/*
-		 * Set this bit so that device attempts three more times at SS,
-		 * even if it failed previously to operate in SS mode.
-		 */
-		reg |= DWC3_GCTL_U2RSTECN;
-		reg &= ~(DWC3_GCTL_PWRDNSCALEMASK);
-		reg |= DWC3_GCTL_PWRDNSCALE(2);
 		dwc3_writel(dwc->regs, DWC3_GCTL, reg);
 	}
 }
@@ -189,14 +162,6 @@ static void dwc3_otg_set_peripheral_regs(struct dwc3_otg *dotg)
 		reg = dwc3_readl(dwc->regs, DWC3_GCTL);
 		reg &= ~(DWC3_GCTL_PRTCAPDIR(DWC3_GCTL_PRTCAP_OTG));
 		reg |= DWC3_GCTL_PRTCAPDIR(DWC3_GCTL_PRTCAP_DEVICE);
-		/*
-		 * Set this bit so that device attempts three more times at SS,
-		 * even if it failed previously to operate in SS mode.
-	 */
-		reg |= DWC3_GCTL_U2RSTECN;
-		reg &= ~(DWC3_GCTL_PWRDNSCALEMASK);
-		reg |= DWC3_GCTL_PWRDNSCALE(2);
-		reg &= ~(DWC3_GCTL_SOFITPSYNC);
 		dwc3_writel(dwc->regs, DWC3_GCTL, reg);
 	}
 }
@@ -290,7 +255,7 @@ static int dwc3_otg_start_host(struct usb_otg *otg, int on)
 		 */
 		if (ext_xceiv && ext_xceiv->otg_capability &&
 						ext_xceiv->ext_block_reset)
-			ext_xceiv->ext_block_reset(ext_xceiv, true);
+			ext_xceiv->ext_block_reset(true);
 
 		dwc3_otg_set_hsphy_auto_suspend(dotg, false);
 		dwc3_otg_set_peripheral_regs(dotg);
@@ -358,7 +323,7 @@ static int dwc3_otg_start_peripheral(struct usb_otg *otg, int on)
 		 * DBM reset is required, hence perform only DBM reset here */
 		if (ext_xceiv && ext_xceiv->otg_capability &&
 						ext_xceiv->ext_block_reset)
-			ext_xceiv->ext_block_reset(ext_xceiv, false);
+			ext_xceiv->ext_block_reset(false);
 
 		dwc3_otg_set_hsphy_auto_suspend(dotg, true);
 		dwc3_otg_set_peripheral_regs(dotg);
@@ -390,13 +355,13 @@ static int dwc3_otg_set_peripheral(struct usb_otg *otg,
 		dev_dbg(otg->phy->dev, "%s: set gadget %s\n",
 					__func__, gadget->name);
 		otg->gadget = gadget;
-		queue_delayed_work_on(0, dotg->sm_wq, &dotg->sm_work, 0);
+		schedule_work(&dotg->sm_work);
 	} else {
 		if (otg->phy->state == OTG_STATE_B_PERIPHERAL) {
 			dwc3_otg_start_peripheral(otg, 0);
 			otg->gadget = NULL;
 			otg->phy->state = OTG_STATE_UNDEFINED;
-			queue_delayed_work_on(0, dotg->sm_wq, &dotg->sm_work, 0);
+			schedule_work(&dotg->sm_work);
 		} else {
 			otg->gadget = NULL;
 		}
@@ -421,7 +386,7 @@ static void dwc3_ext_chg_det_done(struct usb_otg *otg, struct dwc3_charger *chg)
 	 * STOP chg_det as part of !BSV handling would reset the chg_det flags
 	 */
 	if (test_bit(B_SESS_VLD, &dotg->inputs))
-		queue_delayed_work_on(0, dotg->sm_wq, &dotg->sm_work, 0);
+		schedule_work(&dotg->sm_work);
 }
 
 /**
@@ -460,7 +425,7 @@ static void dwc3_ext_event_notify(struct usb_otg *otg,
 
 	/* Flush processing any pending events before handling new ones */
 	if (init)
-		flush_delayed_work(&dotg->sm_work);
+		flush_work(&dotg->sm_work);
 
 	if (event == DWC3_EVENT_PHY_RESUME) {
 		if (!pm_runtime_status_suspended(phy->dev)) {
@@ -507,16 +472,15 @@ static void dwc3_ext_event_notify(struct usb_otg *otg,
 
 		if (!init) {
 			init = true;
-			if (!work_busy(&dotg->sm_work.work))
-				queue_delayed_work_on(0, dotg->sm_wq,
-							&dotg->sm_work, 0);
+			if (!work_busy(&dotg->sm_work))
+				schedule_work(&dotg->sm_work);
 
 			complete(&dotg->dwc3_xcvr_vbus_init);
 			dev_dbg(phy->dev, "XCVR: BSV init complete\n");
 			return;
 		}
 
-		queue_delayed_work_on(0, dotg->sm_wq, &dotg->sm_work, 0);
+		schedule_work(&dotg->sm_work);
 	}
 }
 
@@ -553,7 +517,7 @@ static void dwc3_otg_notify_host_mode(struct usb_otg *otg, int host_mode)
 		power_supply_set_scope(dotg->psy, POWER_SUPPLY_SCOPE_DEVICE);
 }
 
-#if defined(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4) || defined(CONFIG_TOUCHSCREEN_ATMEL_S540)
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4
 extern void trigger_baseline_state_machine(int plug_in, int type);
 #endif
 
@@ -583,15 +547,13 @@ static int dwc3_otg_set_power(struct usb_phy *phy, unsigned mA)
 
 	power_supply_set_supply_type(dotg->psy, power_supply_type);
 
-/*                                                             */
+/* BEGIN : janghyun.baek@lge.com 2012-12-26 For cable detection*/
 #ifdef CONFIG_LGE_PM
 #if defined(CONFIG_USB_DWC3_MSM_VZW_SUPPORT)
-	if (lge_usb_config_finish == 1 ||
-			(lge_pm_get_cable_type() == CABLE_56K ||
-			 lge_pm_get_cable_type() == CABLE_910K ||
-			 lge_pm_get_cable_type() == CABLE_130K))
-#endif
-    {
+	if(lge_usb_config_finish == 1 ||
+        (lge_pm_get_cable_type() == CABLE_56K || lge_pm_get_cable_type() == CABLE_910K || lge_pm_get_cable_type() == CABLE_130K)) 
+#endif  
+      {
 	if (mA > 2 && lge_pm_get_cable_type() != NO_INIT_CABLE) {
 		if (dotg->charger->chg_type == DWC3_SDP_CHARGER)
 			mA = lge_pm_get_usb_current();
@@ -600,50 +562,40 @@ static int dwc3_otg_set_power(struct usb_phy *phy, unsigned mA)
 		}
 	}
 #endif
-/*                                        */
+/* END : janghyun.baek@lge.com 2012-12-26 */
 
 #ifdef CONFIG_LGE_PM
 	if (slimport_is_connected() && mA > 2)
 		mA = IDEV_CHG_MIN;
 #endif
 
-	if (dotg->charger->chg_type == DWC3_CDP_CHARGER)
+	if ((dotg->charger->chg_type == DWC3_CDP_CHARGER) && mA > 2)
 		mA = DWC3_IDEV_CHG_MAX;
+
+	if (slimport_is_connected() && mA)
+		mA = 500;
 
 	if (dotg->charger->max_power == mA)
 		return 0;
 
 	dev_info(phy->dev, "Avail curr from USB = %u\n", mA);
 
-/*                                                             */
+/* BEGIN : janghyun.baek@lge.com 2012-12-26 For cable detection*/
 #ifdef CONFIG_LGE_PM
-	if (dotg->charger->chg_type == DWC3_DCP_CHARGER ||
-			dotg->charger->chg_type == DWC3_PROPRIETARY_CHARGER) {
+	if (dotg->charger->chg_type == DWC3_DCP_CHARGER) {
 		pr_info("msm_otg_notify_power_supply: "
 				"power_supply_get_by_name(ac)\n");
 		dotg->psy = power_supply_get_by_name("ac");
 	} else {
-#ifdef CONFIG_FORCE_FAST_CHARGE
-		if ((force_fast_charge > 0) &&
-				(fake_charge_ac == FAKE_CHARGE_AC_ENABLE)) {
-			pr_info("msm_otg_notify_power_supply: "
-					"power_supply_get_by_name(ac)\n");
-			dotg->psy = power_supply_get_by_name("ac");
-		} else {
-			pr_info("msm_otg_notify_power_supply: "
-					"power_supply_get_by_name(usb)\n");
-			dotg->psy = power_supply_get_by_name("usb");
-		}
-#else
 		pr_info("msm_otg_notify_power_supply: "
 				"power_supply_get_by_name(usb)\n");
 		dotg->psy = power_supply_get_by_name("usb");
-#endif
 	}
-	if (!dotg->psy)
+	if (!dotg->psy) {
 		goto psy_error;
+	}
 #endif
-/*                                        */
+/* END : janghyun.baek@lge.com 2012-12-26 */
 
 	if (dotg->charger->max_power <= 2 && mA > 2) {
 		/* Enable charging */
@@ -651,13 +603,6 @@ static int dwc3_otg_set_power(struct usb_phy *phy, unsigned mA)
 			goto psy_error;
 		if (power_supply_set_current_limit(dotg->psy, 1000*mA))
 			goto psy_error;
-#ifdef CONFIG_MACH_MSM8974_G2_KDDI
-		if (!strncmp(dotg->psy->name, "ac", 2)) {
-			dotg->psy = power_supply_get_by_name("usb");
-			power_supply_set_current_limit(dotg->psy, 1000*mA);
-			dotg->psy = power_supply_get_by_name("ac");
-		}
-#endif
 	} else if (dotg->charger->max_power > 0 && (mA == 0 || mA == 2)) {
 		/* Disable charging */
 		if (power_supply_set_online(dotg->psy, false))
@@ -666,22 +611,20 @@ static int dwc3_otg_set_power(struct usb_phy *phy, unsigned mA)
 		if (power_supply_set_current_limit(dotg->psy, 0))
 			goto psy_error;
 
-/*                                                             */
+/* BEGIN : janghyun.baek@lge.com 2012-12-26 For cable detection*/
 #ifdef CONFIG_LGE_PM
 		/* Below line comes from "dwc3_start_chg_det()" because of
 		 * AC(TA) removal detection
 		 */
 		dotg->charger->chg_type = DWC3_INVALID_CHARGER;
 #endif
-/*                                        */
+/* END : janghyun.baek@lge.com 2012-12-26 */
 	}
 
 	power_supply_changed(dotg->psy);
 	dotg->charger->max_power = mA;
 
-#ifdef CONFIG_MACH_LGE
 	queue_work(touch_otg_wq, &dotg->touch_work);
-#endif
 
 	return 0;
 
@@ -744,7 +687,7 @@ static irqreturn_t dwc3_otg_interrupt(int irq, void *_dotg)
 			handled_irqs |= DWC3_OEVTEN_OTGBDEVVBUSCHNGEVNT;
 		}
 
-		queue_delayed_work_on(0, dotg->sm_wq, &dotg->sm_work, 0);
+		schedule_work(&dotg->sm_work);
 
 		ret = IRQ_HANDLED;
 
@@ -794,27 +737,29 @@ void dwc3_otg_init_sm(struct dwc3_otg *dotg)
 			clear_bit(B_SESS_VLD, &dotg->inputs);
 	}
 }
-static void touch_otg_work(struct work_struct *w)
-{
+
+static void touch_otg_work(struct work_struct *w){
+
 	struct dwc3_otg *dotg = container_of(w, struct dwc3_otg, touch_work);
 
-/*                                                      */
-#if defined(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4) || defined(CONFIG_TOUCHSCREEN_ATMEL_S540)
-	if (dotg->charger->max_power == 0) {
+/*  BEGIN : donguk.ki@lge.com to know usb state on touch*/
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4
+	if(dotg->charger->max_power == 0) {
 		trigger_baseline_state_machine(0, -1);
-		pr_info("[Touch] TA/USB OUT!!!!!!!!!!!!!!!!\n");
+		printk("[Touch] TA/USB OUT!!!!!!!!!!!!!!!!\n");
 	} else {
 		if (dotg->charger->chg_type == DWC3_DCP_CHARGER) {
 			trigger_baseline_state_machine(1, 1);
-			pr_info("[Touch] TA IN!!!!!!!!!!!!!!!!\n");
+			printk("[Touch] TA IN!!!!!!!!!!!!!!!!\n");
 		} else {
 			trigger_baseline_state_machine(1, 0);
-			pr_info("[Touch] USB IN!!!!!!!!!!!!!!!!\n");
+			printk("[Touch] USB IN!!!!!!!!!!!!!!!!\n");
 		}
 	}
 #endif
- /*                                                    */
+ /* END : donguk.ki@lge.com to know usb state on touch */
 }
+
 
 /**
  * dwc3_otg_sm_work - workqueue function.
@@ -826,15 +771,13 @@ static void touch_otg_work(struct work_struct *w)
  */
 static void dwc3_otg_sm_work(struct work_struct *w)
 {
-	struct dwc3_otg *dotg = container_of(w, struct dwc3_otg, sm_work.work);
+	struct dwc3_otg *dotg = container_of(w, struct dwc3_otg, sm_work);
 	struct usb_phy *phy = dotg->otg.phy;
 	struct dwc3_charger *charger = dotg->charger;
 	bool work = 0;
 #ifdef CONFIG_LGE_PM
 	enum lge_boot_mode_type boot_mode;
 #endif
-	int ret = 0;
-	unsigned long delay = 0;
 
 	pm_runtime_resume(phy->dev);
 	dev_dbg(phy->dev, "%s state\n", otg_state_string(phy->state));
@@ -844,15 +787,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 	case OTG_STATE_UNDEFINED:
 		dwc3_otg_init_sm(dotg);
 		if (!dotg->psy) {
-#ifdef CONFIG_FORCE_FAST_CHARGE
-			if ((force_fast_charge > 0) &&
-					(fake_charge_ac == FAKE_CHARGE_AC_ENABLE))
-				dotg->psy = power_supply_get_by_name("ac");
-			else
-				dotg->psy = power_supply_get_by_name("usb");
-#else
 			dotg->psy = power_supply_get_by_name("usb");
-#endif
 
 			if (!dotg->psy)
 				dev_err(phy->dev,
@@ -886,7 +821,6 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 #endif
 			phy->state = OTG_STATE_A_IDLE;
 			work = 1;
-			dotg->charger_retry_count = 0;
 			if (charger) {
 				if (charger->chg_type == DWC3_INVALID_CHARGER)
 					charger->start_detection(dotg->charger,
@@ -916,19 +850,8 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 					work = 1;
 					break;
 				case DWC3_SDP_CHARGER:
-#ifdef CONFIG_FORCE_FAST_CHARGE
-					if (force_fast_charge > 1)
-						dwc3_otg_set_power(phy,
-							fast_charge_level);
-					else if (force_fast_charge > 0)
-						dwc3_otg_set_power(phy,
-							DWC3_IDEV_CHG_MAX);
-					else
-						dwc3_otg_set_power(phy, IUNIT);
-#else
-					dwc3_otg_set_power(phy, IUNIT);
-#endif
-
+					dwc3_otg_set_power(phy,
+								IUNIT);
 #ifdef CONFIG_LGE_PM
 					if (!slimport_is_connected()) {
 						dwc3_otg_start_peripheral(&dotg->otg,
@@ -936,7 +859,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 						phy->state = OTG_STATE_B_PERIPHERAL;
 						work = 1;
 						boot_mode = lge_get_boot_mode();
-						if ((boot_mode != LGE_BOOT_MODE_FACTORY) &&
+						if((boot_mode != LGE_BOOT_MODE_FACTORY) &&
 								(boot_mode != LGE_BOOT_MODE_FACTORY2) &&
 								(boot_mode != LGE_BOOT_MODE_PIFBOOT) &&
 								(boot_mode != LGE_BOOT_MODE_PIFBOOT2) &&
@@ -951,28 +874,6 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 					work = 1;
 #endif
 					break;
-				case DWC3_FLOATED_CHARGER:
-					if (dotg->charger_retry_count <
-							max_chgr_retry_count)
-						dotg->charger_retry_count++;
-					/*
-					 * In case of floating charger, if
-					 * retry count equal to max retry count
-					 * notify PMIC about floating charger
-					 * and put Hw in low power mode. Else
-					 * perform charger detection again by
-					 * calling start_detection() with false
-					 * and then with true argument.
-					 */
-					if (dotg->charger_retry_count ==
-						max_chgr_retry_count) {
-						dwc3_otg_set_power(phy, 0);
-						pm_runtime_put_sync(phy->dev);
-						break;
-					}
-					charger->start_detection(dotg->charger,
-									false);
-
 				default:
 					dev_dbg(phy->dev, "chg_det started\n");
 					charger->start_detection(charger, true);
@@ -997,7 +898,6 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 			if (charger)
 				charger->start_detection(dotg->charger, false);
 
-			dotg->charger_retry_count = 0;
 			dwc3_otg_set_power(phy, 0);
 			dev_dbg(phy->dev, "No device, trying to suspend\n");
 			pm_runtime_put_sync(phy->dev);
@@ -1026,39 +926,22 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 		if (test_bit(ID, &dotg->inputs)) {
 			dev_dbg(phy->dev, "id\n");
 			phy->state = OTG_STATE_B_IDLE;
-			dotg->vbus_retry_count = 0;
 			work = 1;
 		} else {
 			phy->state = OTG_STATE_A_HOST;
-#ifdef CONFIG_LGE_PM
-			/*
-                                        
-                                                              
-    */
+#ifdef CONFIG_LGE_PM // sangmin978.lee@lge.com, 2013-03-18, For OTG, set usb as a current power supply on host mode.
 			dotg->psy = power_supply_get_by_name("usb");
 			if (!dotg->psy)
 				dev_err(phy->dev, "couldn't get usb power supply\n");
 #endif
-			ret = dwc3_otg_start_host(&dotg->otg, 1);
-			if ((ret == -EPROBE_DEFER) &&
-						dotg->vbus_retry_count < 3) {
-				/*
-				 * Get regulator failed as regulator driver is
-				 * not up yet. Will try to start host after 1sec
-				 */
-				phy->state = OTG_STATE_A_IDLE;
-				dev_dbg(phy->dev, "Unable to get vbus regulator. Retrying...\n");
-				delay = VBUS_REG_CHECK_DELAY;
-				work = 1;
-				dotg->vbus_retry_count++;
-			} else if (ret) {
+			if (dwc3_otg_start_host(&dotg->otg, 1)) {
 				/*
 				 * Probably set_host was not called yet.
 				 * We will re-try as soon as it will be called
 				 */
 				dev_dbg(phy->dev, "enter lpm as\n"
 					"unable to start A-device\n");
-				phy->state = OTG_STATE_A_IDLE;
+				phy->state = OTG_STATE_UNDEFINED;
 				pm_runtime_put_sync(phy->dev);
 				return;
 			}
@@ -1070,7 +953,6 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 			dev_dbg(phy->dev, "id\n");
 			dwc3_otg_start_host(&dotg->otg, 0);
 			phy->state = OTG_STATE_B_IDLE;
-			dotg->vbus_retry_count = 0;
 			work = 1;
 		}
 		break;
@@ -1081,7 +963,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 	}
 
 	if (work)
-		queue_delayed_work_on(0, dotg->sm_wq, &dotg->sm_work, delay);
+		schedule_work(&dotg->sm_work);
 }
 
 
@@ -1100,8 +982,7 @@ static void dwc3_otg_reset(struct dwc3_otg *dotg)
 	 * OCFG[1] - HNPCap = 0
 	 * OCFG[0] - SRPCap = 0
 	 */
-	if (ext_xceiv && !ext_xceiv->otg_capability)
-		dwc3_writel(dotg->regs, DWC3_OCFG, 0x4);
+	dwc3_writel(dotg->regs, DWC3_OCFG, 0x4);
 
 	/*
 	 * OCTL[6] - PeriMode = 1
@@ -1113,8 +994,7 @@ static void dwc3_otg_reset(struct dwc3_otg *dotg)
 	 * OCTL[0] - HstSetHNPEn = 0
 	 */
 	if (!once) {
-		if (ext_xceiv && !ext_xceiv->otg_capability)
-			dwc3_writel(dotg->regs, DWC3_OCTL, 0x40);
+		dwc3_writel(dotg->regs, DWC3_OCTL, 0x40);
 		once++;
 	}
 
@@ -1191,7 +1071,8 @@ int dwc3_otg_init(struct dwc3 *dwc)
 	dotg->dwc = dwc;
 	dotg->otg.phy->otg = &dotg->otg;
 	dotg->otg.phy->dev = dwc->dev;
-	dotg->otg.phy->set_power = dwc3_otg_set_power;
+	if (!dwc->no_set_vbus_power)
+		dotg->otg.phy->set_power = dwc3_otg_set_power;
 	dotg->otg.phy->set_suspend = dwc3_otg_set_suspend;
 
 	ret = usb_set_transceiver(dotg->otg.phy);
@@ -1206,18 +1087,14 @@ int dwc3_otg_init(struct dwc3 *dwc)
 
 	init_completion(&dotg->dwc3_xcvr_vbus_init);
 
-#ifdef CONFIG_MACH_LGE
 	touch_otg_wq = create_singlethread_workqueue("touch_otg_wq");
-	if (!touch_otg_wq) {
+	if(!touch_otg_wq){
 		dev_err(dwc->dev, "CANNOT create new workqueue\n");
 		goto err4;
 	}
 
+	INIT_WORK(&dotg->sm_work, dwc3_otg_sm_work);
 	INIT_WORK(&dotg->touch_work, touch_otg_work);
-#endif
-
-	INIT_DELAYED_WORK(&dotg->sm_work, dwc3_otg_sm_work);
-	dotg->sm_wq = alloc_workqueue("sm_work", WQ_NON_REENTRANT, 0);
 
 	ret = request_irq(dotg->irq, dwc3_otg_interrupt, IRQF_SHARED,
 				"dwc3_otg", dotg);
@@ -1231,11 +1108,12 @@ int dwc3_otg_init(struct dwc3 *dwc)
 
 	return 0;
 
+
 err4:
-	if (touch_otg_wq)
-		destroy_workqueue(touch_otg_wq);
+	if(touch_otg_wq)
+	    destroy_workqueue(touch_otg_wq);
 err3:
-	cancel_delayed_work_sync(&dotg->sm_work);
+	cancel_work_sync(&dotg->sm_work);
 	usb_set_transceiver(NULL);
 err2:
 	kfree(dotg->otg.phy);
@@ -1260,7 +1138,7 @@ void dwc3_otg_exit(struct dwc3 *dwc)
 	if (dotg) {
 		if (dotg->charger)
 			dotg->charger->start_detection(dotg->charger, false);
-		cancel_delayed_work_sync(&dotg->sm_work);
+		cancel_work_sync(&dotg->sm_work);
 		usb_set_transceiver(NULL);
 		pm_runtime_put(dwc->dev);
 		free_irq(dotg->irq, dotg);
@@ -1268,6 +1146,7 @@ void dwc3_otg_exit(struct dwc3 *dwc)
 		kfree(dotg);
 		dwc->dotg = NULL;
 	}
-	if (touch_otg_wq)
+
+	if(touch_otg_wq)
 		destroy_workqueue(touch_otg_wq);
 }

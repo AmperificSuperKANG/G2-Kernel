@@ -163,10 +163,7 @@
 
 /* Global Configuration Register */
 #define DWC3_GCTL_PWRDNSCALE(n)	((n) << 19)
-#define DWC3_GCTL_PWRDNSCALEMASK (0xFFF80000)
 #define DWC3_GCTL_U2RSTECN	(1 << 16)
-#define DWC3_GCTL_SOFITPSYNC	(1 << 10)
-#define DWC3_GCTL_U2EXIT_LFPS	(1 << 2)
 #define DWC3_GCTL_RAMCLKSEL(x)	(((x) & DWC3_GCTL_CLK_MASK) << 6)
 #define DWC3_GCTL_CLK_BUS	(0)
 #define DWC3_GCTL_CLK_PIPE	(1)
@@ -631,6 +628,7 @@ struct dwc3_request {
 
 	u8			epnum;
 	struct dwc3_trb		*trb;
+	struct dwc3_trb		*ztrb;
 	dma_addr_t		trb_dma;
 
 	unsigned		direction:1;
@@ -646,10 +644,6 @@ struct dwc3_scratchpad_array {
 	__le64	dma_adr[DWC3_MAX_HIBER_SCRATCHBUFS];
 };
 
-#define DWC3_CONTROLLER_ERROR_EVENT			0
-#define DWC3_CONTROLLER_RESET_EVENT			1
-#define DWC3_CONTROLLER_POST_RESET_EVENT		2
-#define DWC3_CONTROLLER_POST_INITIALIZATION_EVENT	3
 /**
  * struct dwc3 - representation of our controller
  * @ctrl_req: usb control request which is used for ep0
@@ -778,7 +772,8 @@ struct dwc3 {
 
 	/* Indicate if software connect was issued by the usb_gadget_driver */
 	bool			softconnect;
-	void (*notify_event) (struct dwc3 *, unsigned);
+
+	bool			no_set_vbus_power;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -864,15 +859,15 @@ struct dwc3_event_depevt {
  *	12	- VndrDevTstRcved
  * @reserved15_12: Reserved, not used
  * @event_info: Information about this event
- * @reserved31_25: Reserved, not used
+ * @reserved31_24: Reserved, not used
  */
 struct dwc3_event_devt {
 	u32	one_bit:1;
 	u32	device_event:7;
 	u32	type:4;
 	u32	reserved15_12:4;
-	u32	event_info:9;
-	u32	reserved31_25:7;
+	u32	event_info:8;
+	u32	reserved31_24:8;
 } __packed;
 
 /**
@@ -928,11 +923,7 @@ void dwc3_gadget_exit(struct dwc3 *dwc);
 
 void dwc3_gadget_restart(struct dwc3 *dwc);
 void dwc3_post_host_reset_core_init(struct dwc3 *dwc);
-int dwc3_event_buffers_setup(struct dwc3 *dwc);
 
-extern void dwc3_set_notifier(
-		void (*notify) (struct dwc3 *dwc3, unsigned event));
-extern void dwc3_notify_event(struct dwc3 *dwc3, unsigned event);
 extern int dwc3_get_device_id(void);
 extern void dwc3_put_device_id(int id);
 

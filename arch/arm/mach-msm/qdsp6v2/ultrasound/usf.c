@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,8 +27,8 @@
 #include "usfcdev.h"
 
 /* The driver version*/
-#define DRV_VERSION "1.7.1"
-#define USF_VERSION_ID 0x0171
+#define DRV_VERSION "1.4.2"
+#define USF_VERSION_ID 0x0142
 
 /* Standard timeout in the asynchronous ops */
 #define USF_TIMEOUT_JIFFIES (1*HZ) /* 1 sec */
@@ -36,8 +36,6 @@
 /* Undefined USF device */
 #define USF_UNDEF_DEV_ID 0xffff
 
-/* TX memory mapping flag */
-#define USF_VM_READ 1
 /* RX memory mapping flag */
 #define USF_VM_WRITE 2
 
@@ -59,15 +57,12 @@
 /* Place for US detection result, received from QDSP6 */
 #define APR_US_DETECT_RESULT_IND 0
 
-#define BITS_IN_BYTE 8
-
 /* The driver states */
 enum usf_state_type {
 	USF_IDLE_STATE,
 	USF_OPENED_STATE,
 	USF_CONFIGURED_STATE,
 	USF_WORK_STATE,
-	USF_ADSP_RESTART_STATE,
 	USF_ERROR_STATE
 };
 
@@ -116,12 +111,12 @@ struct usf_type {
 	uint16_t event_types;
 	/*  The input devices are "input" module registered clients */
 	struct input_dev *input_ifs[USF_MAX_EVENT_IND];
+	/*  The event source */
+	int event_src;
 	/* Bitmap of types of events, conflicting to USF's ones */
 	uint16_t conflicting_event_types;
 	/* Bitmap of types of events from devs, conflicting with USF */
 	uint16_t conflicting_event_filters;
-	/* The requested buttons bitmap */
-	uint16_t req_buttons_bitmap;
 };
 
 struct usf_input_dev_type {
@@ -144,22 +139,11 @@ struct usf_input_dev_type {
 /* The MAX number of the supported devices */
 #define MAX_DEVS_NUMBER	1
 
-/*
- * code for a special button that is used to show/hide a
- * hovering cursor in the input framework. Must be in
- * sync with the button code definition in the framework
- * (EventHub.h)
- */
-#define BTN_USF_HOVERING_CURSOR         0x230
-
-/* Supported buttons container */
-static const int s_button_map[] = {
-	BTN_STYLUS,
-	BTN_STYLUS2,
-	BTN_TOOL_PEN,
-	BTN_TOOL_RUBBER,
-	BTN_TOOL_FINGER,
-	BTN_USF_HOVERING_CURSOR
+/* The opened devices container */
+static const int s_event_src_map[] = {
+	BTN_TOOL_PEN, /* US_INPUT_SRC_PEN*/
+	0,            /* US_INPUT_SRC_FINGER */
+	0,            /* US_INPUT_SRC_UNDEF */
 };
 
 /* The opened devices container */
@@ -192,36 +176,14 @@ static int prepare_tsc_input_device(uint16_t ind,
 				struct us_input_info_type *input_info,
 				const char *name)
 {
-	int i = 0;
-
-	int num_buttons = min(ARRAY_SIZE(s_button_map),
-		sizeof(input_info->req_buttons_bitmap) *
-		BITS_IN_BYTE);
-	uint16_t max_buttons_bitmap = ((1 << ARRAY_SIZE(s_button_map)) - 1);
-
 	struct input_dev *in_dev = allocate_dev(ind, name);
+
 	if (in_dev == NULL)
 		return -ENOMEM;
 
-	if (input_info->req_buttons_bitmap > max_buttons_bitmap) {
-		pr_err("%s: Requested buttons[%d] exceeds max buttons available[%d]\n",
-		__func__,
-		input_info->req_buttons_bitmap,
-		max_buttons_bitmap);
-		return -EINVAL;
-	}
-
 	usf_info->input_ifs[ind] = in_dev;
-	usf_info->req_buttons_bitmap =
-		input_info->req_buttons_bitmap;
 	in_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
 	in_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
-
-	for (i = 0; i < num_buttons; i++)
-		if (input_info->req_buttons_bitmap & (1 << i))
-			in_dev->keybit[BIT_WORD(s_button_map[i])] |=
-			BIT_MASK(s_button_map[i]);
-
 	input_set_abs_params(in_dev, ABS_X,
 			     input_info->tsc_x_dim[MIN_IND],
 			     input_info->tsc_x_dim[MAX_IND],
@@ -298,11 +260,6 @@ static void notify_tsc_event(struct usf_type *usf_info,
 			     struct usf_event_type *event)
 
 {
-	int i = 0;
-	int num_buttons = min(ARRAY_SIZE(s_button_map),
-		sizeof(usf_info->req_buttons_bitmap) *
-		BITS_IN_BYTE);
-
 	struct input_dev *input_if = usf_info->input_ifs[if_ind];
 	struct point_event_type *pe = &(event->event_data.point_event);
 
@@ -316,24 +273,19 @@ static void notify_tsc_event(struct usf_type *usf_info,
 	input_report_abs(input_if, ABS_PRESSURE, pe->pressure);
 	input_report_key(input_if, BTN_TOUCH, !!(pe->pressure));
 
-	for (i = 0; i < num_buttons; i++) {
-		uint16_t mask = (1 << i),
-		btn_state = !!(pe->buttons_state_bitmap & mask);
-		if (usf_info->req_buttons_bitmap & mask)
-			input_report_key(input_if, s_button_map[i], btn_state);
-	}
+	if (usf_info->event_src)
+		input_report_key(input_if, usf_info->event_src, 1);
 
 	input_sync(input_if);
 
-	pr_debug("%s: TSC event: xyz[%d;%d;%d], incl[%d;%d], pressure[%d], buttons[%d]\n",
+	pr_debug("%s: TSC event: xyz[%d;%d;%d], incl[%d;%d], pressure[%d]\n",
 		 __func__,
 		 pe->coordinates[X_IND],
 		 pe->coordinates[Y_IND],
 		 pe->coordinates[Z_IND],
 		 pe->inclinations[X_IND],
 		 pe->inclinations[Y_IND],
-		 pe->pressure,
-		 pe->buttons_state_bitmap);
+		 pe->pressure);
 }
 
 static void notify_mouse_event(struct usf_type *usf_info,
@@ -386,8 +338,6 @@ static struct usf_input_dev_type s_usf_input_devs[] = {
 		prepare_mouse_input_device, notify_mouse_event},
 	{USF_KEYBOARD_EVENT, "usf_kb",
 		prepare_keyboard_input_device, notify_key_event},
-	{USF_TSC_EXT_EVENT, "usf_tsc_ext",
-		prepare_tsc_input_device, notify_tsc_event},
 };
 
 static void usf_rx_cb(uint32_t opcode, uint32_t token,
@@ -404,13 +354,6 @@ static void usf_rx_cb(uint32_t opcode, uint32_t token,
 	case Q6USM_EVENT_WRITE_DONE:
 		wake_up(&usf_xx->wait);
 		break;
-
-	case RESET_EVENTS:
-		pr_err("%s: received RESET_EVENTS\n", __func__);
-		usf_xx->usf_state = USF_ADSP_RESTART_STATE;
-		wake_up(&usf_xx->wait);
-		break;
-
 	default:
 		break;
 	}
@@ -448,12 +391,6 @@ static void usf_tx_cb(uint32_t opcode, uint32_t token,
 			usf_xx->new_region = USM_WRONG_TOKEN;
 			wake_up(&usf_xx->wait);
 		}
-		break;
-
-	case RESET_EVENTS:
-		pr_err("%s: received RESET_EVENTS\n", __func__);
-		usf_xx->usf_state = USF_ADSP_RESTART_STATE;
-		wake_up(&usf_xx->wait);
 		break;
 
 	default:
@@ -666,6 +603,12 @@ static int register_input_device(struct usf_type *usf_info,
 		return -EINVAL;
 	}
 
+	if (input_info->event_src < ARRAY_SIZE(s_event_src_map))
+		usf_info->event_src =
+			s_event_src_map[input_info->event_src];
+	else
+		usf_info->event_src = 0;
+
 	for (ind = 0; ind < USF_MAX_EVENT_IND; ++ind) {
 		if (usf_info->input_ifs[ind] != NULL) {
 			pr_err("%s: input_if[%d] is already allocated\n",
@@ -682,6 +625,12 @@ static int register_input_device(struct usf_type *usf_info,
 				s_usf_input_devs[ind].input_dev_name);
 			if (rc)
 				return rc;
+
+
+			if (usf_info->event_src)
+				input_set_capability(usf_info->input_ifs[ind],
+						     EV_KEY,
+						     usf_info->event_src);
 
 			rc = input_register_device(usf_info->input_ifs[ind]);
 			if (rc) {
@@ -867,9 +816,7 @@ static int usf_set_us_detection(struct usf_type *usf, unsigned long arg)
 	if (detect_info.detect_timeout == USF_INFINITIVE_TIMEOUT) {
 		rc = wait_event_interruptible(usf_xx->wait,
 						(usf_xx->us_detect_type !=
-						USF_US_DETECT_UNDEF) ||
-						(usf_xx->usf_state ==
-						USF_ADSP_RESTART_STATE));
+						USF_US_DETECT_UNDEF));
 	} else {
 		if (detect_info.detect_timeout == USF_DEFAULT_TIMEOUT)
 			timeout = USF_TIMEOUT_JIFFIES;
@@ -878,14 +825,8 @@ static int usf_set_us_detection(struct usf_type *usf, unsigned long arg)
 	}
 	rc = wait_event_interruptible_timeout(usf_xx->wait,
 					(usf_xx->us_detect_type !=
-					USF_US_DETECT_UNDEF) ||
-					(usf_xx->usf_state ==
-					USF_ADSP_RESTART_STATE), timeout);
-
-	/* In the case of aDSP restart, "no US" is assumed */
-	if (usf_xx->usf_state == USF_ADSP_RESTART_STATE) {
-		rc = -EFAULT;
-	}
+					 USF_US_DETECT_UNDEF),
+					timeout);
 	/* In the case of timeout, "no US" is assumed */
 	if (rc < 0) {
 		pr_err("%s: Getting US detection failed rc[%d]\n",
@@ -962,13 +903,6 @@ static int usf_set_tx_info(struct usf_type *usf, unsigned long arg)
 		return rc;
 	}
 
-	rc = q6usm_us_param_buf_alloc(OUT, usf_xx->usc,
-			config_tx.us_xx_info.max_get_set_param_buf_size);
-	if (rc) {
-		(void)q6usm_cmd(usf_xx->usc, CMD_CLOSE);
-		return rc;
-	}
-
 	rc = q6usm_enc_cfg_blk(usf_xx->usc,
 			       &usf_xx->encdec_cfg);
 	if (!rc &&
@@ -1023,13 +957,6 @@ static int usf_set_rx_info(struct usf_type *usf, unsigned long arg)
 			(void)q6usm_cmd(usf_xx->usc, CMD_CLOSE);
 			return rc;
 		}
-	}
-
-	rc = q6usm_us_param_buf_alloc(IN, usf_xx->usc,
-			config_rx.us_xx_info.max_get_set_param_buf_size);
-	if (rc) {
-		(void)q6usm_cmd(usf_xx->usc, CMD_CLOSE);
-		return rc;
 	}
 
 	rc = q6usm_dec_cfg_blk(usf_xx->usc,
@@ -1270,120 +1197,6 @@ static int usf_get_version(unsigned long arg)
 	return rc;
 } /* usf_get_version */
 
-static int usf_set_stream_param(struct usf_xx_type *usf_xx,
-				unsigned long arg, int dir)
-{
-	struct us_stream_param_type set_stream_param;
-	struct us_client *usc = usf_xx->usc;
-	struct us_port_data *port = &usc->port[dir];
-	int rc = 0;
-
-	if (port->param_buf == NULL) {
-		pr_err("%s: parameter buffer is null\n",
-			__func__);
-		return -EFAULT;
-	}
-
-	rc = copy_from_user(&set_stream_param,
-			(struct us_stream_param_type __user *) arg,
-			sizeof(set_stream_param));
-
-	if (rc) {
-		pr_err("%s: copy set_stream_param from user; rc=%d\n",
-			__func__, rc);
-		return -EFAULT;
-	}
-
-	if (set_stream_param.buf_size > port->param_buf_size) {
-		pr_err("%s: buf_size (%d) > maximum buf size (%d)\n",
-			__func__, set_stream_param.buf_size,
-			port->param_buf_size);
-		return -EINVAL;
-	}
-
-	if (set_stream_param.buf_size == 0) {
-		pr_err("%s: buf_size is 0\n", __func__);
-		return -EINVAL;
-	}
-
-	rc = copy_from_user(port->param_buf,
-			(uint8_t __user *) set_stream_param.pbuf,
-			set_stream_param.buf_size);
-	if (rc) {
-		pr_err("%s: copy param buf from user; rc=%d\n",
-			__func__, rc);
-		return -EFAULT;
-	}
-
-	rc = q6usm_set_us_stream_param(dir, usc, set_stream_param.module_id,
-					set_stream_param.param_id,
-					set_stream_param.buf_size);
-	if (rc) {
-		pr_err("%s: q6usm_set_us_stream_param failed; rc=%d\n",
-			__func__, rc);
-		return -EFAULT;
-	}
-
-	return rc;
-} /* usf_set_stream_param */
-
-static int usf_get_stream_param(struct usf_xx_type *usf_xx,
-				unsigned long arg, int dir)
-{
-	struct us_stream_param_type get_stream_param;
-	struct us_client *usc = usf_xx->usc;
-	struct us_port_data *port = &usc->port[dir];
-	int rc = 0;
-
-	if (port->param_buf == NULL) {
-		pr_err("%s: parameter buffer is null\n",
-			__func__);
-		return -EFAULT;
-	}
-
-	rc = copy_from_user(&get_stream_param,
-			(struct us_stream_param_type __user *) arg,
-			sizeof(get_stream_param));
-
-	if (rc) {
-		pr_err("%s: copy get_stream_param from user; rc=%d\n",
-			__func__, rc);
-		return -EFAULT;
-	}
-
-	if (get_stream_param.buf_size > port->param_buf_size) {
-		pr_err("%s: buf_size (%d) > maximum buf size (%d)\n",
-			__func__, get_stream_param.buf_size,
-			port->param_buf_size);
-		return -EINVAL;
-	}
-
-	if (get_stream_param.buf_size == 0) {
-		pr_err("%s: buf_size is 0\n", __func__);
-		return -EINVAL;
-	}
-
-	rc = q6usm_get_us_stream_param(dir, usc, get_stream_param.module_id,
-					get_stream_param.param_id,
-					get_stream_param.buf_size);
-	if (rc) {
-		pr_err("%s: q6usm_get_us_stream_param failed; rc=%d\n",
-			__func__, rc);
-		return -EFAULT;
-	}
-
-	rc = copy_to_user((uint8_t __user *) get_stream_param.pbuf,
-			port->param_buf,
-			get_stream_param.buf_size);
-	if (rc) {
-		pr_err("%s: copy param buf to user; rc=%d\n",
-			__func__, rc);
-		return -EFAULT;
-	}
-
-	return rc;
-} /* usf_get_stream_param */
-
 static long usf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int rc = 0;
@@ -1472,8 +1285,7 @@ static long usf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case US_STOP_TX: {
 		usf_xx = &usf->usf_tx;
-		if ((usf_xx->usf_state == USF_WORK_STATE)
-			|| (usf_xx->usf_state == USF_ADSP_RESTART_STATE))
+		if (usf_xx->usf_state == USF_WORK_STATE)
 			rc = usf_stop_tx(usf);
 		else {
 			pr_err("%s: stop_tx: wrong state[%d]\n",
@@ -1486,8 +1298,7 @@ static long usf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case US_STOP_RX: {
 		usf_xx = &usf->usf_rx;
-		if ((usf_xx->usf_state == USF_WORK_STATE)
-			|| (usf_xx->usf_state == USF_ADSP_RESTART_STATE))
+		if (usf_xx->usf_state == USF_WORK_STATE)
 			usf_disable(usf_xx);
 		else {
 			pr_err("%s: stop_rx: wrong state[%d]\n",
@@ -1515,26 +1326,6 @@ static long usf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		rc = usf_get_version(arg);
 		break;
 	} /* US_GET_VERSION */
-
-	case US_SET_TX_STREAM_PARAM: {
-		rc = usf_set_stream_param(&usf->usf_tx, arg, OUT);
-		break;
-	} /* US_SET_TX_STREAM_PARAM */
-
-	case US_GET_TX_STREAM_PARAM: {
-		rc = usf_get_stream_param(&usf->usf_tx, arg, OUT);
-		break;
-	} /* US_GET_TX_STREAM_PARAM */
-
-	case US_SET_RX_STREAM_PARAM: {
-		rc = usf_set_stream_param(&usf->usf_rx, arg, IN);
-		break;
-	} /* US_SET_RX_STREAM_PARAM */
-
-	case US_GET_RX_STREAM_PARAM: {
-		rc = usf_get_stream_param(&usf->usf_rx, arg, IN);
-		break;
-	} /* US_GET_RX_STREAM_PARAM */
 
 	default:
 		pr_err("%s: unsupported IOCTL command [%d]\n",

@@ -402,7 +402,6 @@ config AUDIT_LOGINUID_IMMUTABLE
 	  but may not be backwards compatible with older init systems.
 
 source "kernel/irq/Kconfig"
-source "kernel/time/Kconfig"
 
 menu "RCU Subsystem"
 
@@ -590,12 +589,6 @@ config LOG_BUF_SHIFT
 # Architectures with an unreliable sched_clock() should select this:
 #
 config HAVE_UNSTABLE_SCHED_CLOCK
-	bool
-
-#
-# For architectures that know their GCC __int128 support is sound
-#
-config ARCH_SUPPORTS_INT128
 	bool
 
 menuconfig CGROUPS
@@ -984,7 +977,7 @@ config PANIC_TIMEOUT
 menuconfig EXPERT
 	bool "Configure standard kernel features (expert users)"
 	# Unhide debug options, to make the on-by-default options visible
-	# We do not select DEBUG_KERNEL
+	select DEBUG_KERNEL
 	help
 	  This option allows certain base kernel options and settings
           to be disabled or tweaked. This is for specialized
@@ -1063,7 +1056,6 @@ config HOTPLUG
 config PRINTK
 	default y
 	bool "Enable support for printk" if EXPERT
-	select IRQ_WORK
 	help
 	  This option enables normal printk support. Removing it
 	  eliminates most of the message strings from the kernel image
@@ -1116,13 +1108,6 @@ config FUTEX
 	  Disabling this option will cause the kernel to be built without
 	  support for "fast userspace mutexes".  The resulting kernel may not
 	  run glibc-based applications correctly.
-
-config HAVE_FUTEX_CMPXCHG
-	bool
-	help
-	  Architectures should select this if futex_atomic_cmpxchg_inatomic()
-	  is implemented and always working. This removes a couple of runtime
-	  checks.
 
 config EPOLL
 	bool "Enable eventpoll support" if EXPERT

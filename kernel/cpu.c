@@ -10,10 +10,7 @@
 #include <linux/sched.h>
 #include <linux/unistd.h>
 #include <linux/cpu.h>
-#include <linux/oom.h>
-#include <linux/rcupdate.h>
 #include <linux/export.h>
-#include <linux/bug.h>
 #include <linux/kthread.h>
 #include <linux/stop_machine.h>
 #include <linux/mutex.h>
@@ -203,57 +200,14 @@ void __ref unregister_cpu_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL(unregister_cpu_notifier);
 
-/**
- * clear_tasks_mm_cpumask - Safely clear tasks' mm_cpumask for a CPU
- * @cpu: a CPU id
- *
- * This function walks all processes, finds a valid mm struct for each one and
- * then clears a corresponding bit in mm's cpumask.  While this all sounds
- * trivial, there are various non-obvious corner cases, which this function
- * tries to solve in a safe manner.
- *
- * Also note that the function uses a somewhat relaxed locking scheme, so it may
- * be called only for an already offlined CPU.
- */
-void clear_tasks_mm_cpumask(int cpu)
-{
-	struct task_struct *p;
-
-	/*
-	 * This function is called after the cpu is taken down and marked
-	 * offline, so its not like new tasks will ever get this cpu set in
-	 * their mm mask. -- Peter Zijlstra
-	 * Thus, we may use rcu_read_lock() here, instead of grabbing
-	 * full-fledged tasklist_lock.
-	 */
-	WARN_ON(cpu_online(cpu));
-	rcu_read_lock();
-	for_each_process(p) {
-		struct task_struct *t;
-
-		/*
-		 * Main thread might exit, but other threads may still have
-		 * a valid mm. Find one.
-		 */
-		t = find_lock_task_mm(p);
-		if (!t)
-			continue;
-		cpumask_clear_cpu(cpu, mm_cpumask(t->mm));
-		task_unlock(t);
-	}
-	rcu_read_unlock();
-}
-
 static inline void check_for_tasks(int cpu)
 {
 	struct task_struct *p;
-	cputime_t utime, stime;
 
 	write_lock_irq(&tasklist_lock);
 	for_each_process(p) {
-		task_cputime(p, &utime, &stime);
 		if (task_cpu(p) == cpu && p->state == TASK_RUNNING &&
-		    (utime || stime))
+		    (p->utime || p->stime))
 			printk(KERN_WARNING "Task %s (pid = %d) is on cpu %d "
 				"(state = %ld, flags = %x)\n",
 				p->comm, task_pid_nr(p), cpu,
@@ -311,27 +265,7 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen)
 				__func__, cpu);
 		goto out_release;
 	}
-
-	/*
-	 * By now we've cleared cpu_active_mask, wait for all preempt-disabled
-	 * and RCU users of this state to go away such that all new such users
-	 * will observe it.
-	 *
-	 * For CONFIG_PREEMPT we have preemptible RCU and its sync_rcu() might
-	 * not imply sync_sched(), so explicitly call both.
-	 *
-	 * Do sync before park smpboot threads to take care the rcu boost case.
-	 */
-#ifdef CONFIG_PREEMPT
-	synchronize_sched();
-#endif
-	synchronize_rcu();
-
 	smpboot_park_threads(cpu);
-
-	/*
-	 * So now all preempt/rcu users must observe !cpu_active().
-	 */
 
 	err = __stop_machine(take_cpu_down, &tcd_param, cpumask_of(cpu));
 	if (err) {
@@ -396,12 +330,10 @@ static int __cpuinit _cpu_up(unsigned int cpu, int tasks_frozen)
 	unsigned long mod = tasks_frozen ? CPU_TASKS_FROZEN : 0;
 	struct task_struct *idle;
 
-	cpu_hotplug_begin();
+	if (cpu_online(cpu) || !cpu_present(cpu))
+		return -EINVAL;
 
-	if (cpu_online(cpu) || !cpu_present(cpu)) {
-		ret = -EINVAL;
-		goto out;
-	}
+	cpu_hotplug_begin();
 
 	idle = idle_thread_get(cpu);
 	if (IS_ERR(idle)) {
@@ -422,7 +354,7 @@ static int __cpuinit _cpu_up(unsigned int cpu, int tasks_frozen)
 	}
 
 	/* Arch-specific enabling code. */
-	ret = __cpu_up(cpu, idle);
+	ret = __cpu_up(cpu);
 	if (ret != 0)
 		goto out_notify;
 	BUG_ON(!cpu_online(cpu));
@@ -479,7 +411,7 @@ int __cpuinit cpu_up(unsigned int cpu)
 
 	if (pgdat->node_zonelists->_zonerefs->zone == NULL) {
 		mutex_lock(&zonelists_mutex);
-		build_all_zonelists(NULL, NULL);
+		build_all_zonelists(NULL);
 		mutex_unlock(&zonelists_mutex);
 	}
 #endif
@@ -558,35 +490,9 @@ void __weak arch_enable_nonboot_cpus_end(void)
 {
 }
 
-#ifdef CONFIG_MACH_MSM8974_B1_KR
-#define BOOST_FREQ_TIME_MS 2000
-static struct timer_list boost_freq_timer;
-int boost_freq = 0;
-static void boost_freq_timer_cb(unsigned long data)
-{
-	printk(KERN_ERR "clearing boost %d->0 ...\n", boost_freq);
-	boost_freq = 0;
-}
-#endif
-
 void __ref enable_nonboot_cpus(void)
 {
 	int cpu, error;
-#ifdef CONFIG_MACH_MSM8974_B1_KR
-	static int first = 0;
-
-	if (!first) {
-		init_timer(&boost_freq_timer);
-		first = 1;
-	}
-	if (timer_pending(&boost_freq_timer))
-		del_timer(&boost_freq_timer);
-	boost_freq_timer.function = boost_freq_timer_cb;
-	boost_freq_timer.expires =
-		jiffies + msecs_to_jiffies(BOOST_FREQ_TIME_MS);
-	add_timer(&boost_freq_timer);
-	boost_freq = 1;
-#endif
 
 	/* Allow everyone to use the CPU hotplug again */
 	cpu_maps_update_begin();
@@ -659,11 +565,6 @@ cpu_hotplug_pm_callback(struct notifier_block *nb,
 
 static int __init cpu_hotplug_pm_sync_init(void)
 {
-	/*
-	 * cpu_hotplug_pm_callback has higher priority than x86
-	 * bsp_pm_callback which depends on cpu_hotplug_pm_callback
-	 * to disable cpu hotplug to avoid cpu hotplug race.
-	 */
 	pm_notifier(cpu_hotplug_pm_callback, 0);
 	return 0;
 }
@@ -759,12 +660,10 @@ void set_cpu_present(unsigned int cpu, bool present)
 
 void set_cpu_online(unsigned int cpu, bool online)
 {
-	if (online) {
+	if (online)
 		cpumask_set_cpu(cpu, to_cpumask(cpu_online_bits));
-		cpumask_set_cpu(cpu, to_cpumask(cpu_active_bits));
-	} else {
+	else
 		cpumask_clear_cpu(cpu, to_cpumask(cpu_online_bits));
-	}
 }
 
 void set_cpu_active(unsigned int cpu, bool active)
