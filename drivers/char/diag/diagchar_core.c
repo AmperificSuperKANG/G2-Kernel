@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -54,6 +54,7 @@ MODULE_DESCRIPTION("Diag Char Driver");
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("1.0");
 
+#define MIN_SIZ_ALLOW 4
 #define INIT	1
 #define EXIT	-1
 struct diagchar_dev *driver;
@@ -481,8 +482,8 @@ int diag_copy_remote(char __user *buf, size_t count, int *pret, int *pnum_data)
 
 		for (i = 0; i < diag_hsic[index].poolsize_hsic_write; i++) {
 			if (hsic_buf_tbl[i].length > 0) {
-				pr_debug("diag: HSIC copy to user, i: %d, buf: %x, len: %d\n",
-					i, (unsigned int)hsic_buf_tbl[i].buf,
+				pr_debug("diag: HSIC copy to user, i: %d, buf: %p, len: %d\n",
+					i, hsic_buf_tbl[i].buf,
 					hsic_buf_tbl[i].length);
 				num_data++;
 
@@ -945,6 +946,8 @@ long diagchar_ioctl(struct file *filp,
 		for (i = 0; i < MAX_DCI_CLIENTS; i++) {
 			if (driver->dci_client_tbl[i].client == NULL) {
 				driver->dci_client_tbl[i].client = current;
+				driver->dci_client_tbl[i].client_id =
+							driver->dci_client_id;
 				driver->dci_client_tbl[i].list =
 							 dci_params->list;
 				driver->dci_client_tbl[i].signal_type =
@@ -984,7 +987,7 @@ long diagchar_ioctl(struct file *filp,
 			clear_client_dci_cumulative_log_mask(i);
 			/* send updated log mask to peripherals */
 			result =
-			diag_send_dci_log_mask(driver->smd_cntl[MODEM_DATA].ch);
+			diag_send_dci_log_mask(&driver->smd_cntl[MODEM_DATA]);
 			if (result != DIAG_DCI_NO_ERROR) {
 				mutex_unlock(&driver->dci_mutex);
 				return result;
@@ -994,7 +997,7 @@ long diagchar_ioctl(struct file *filp,
 			/* send updated event mask to peripherals */
 			result =
 			diag_send_dci_event_mask(
-				driver->smd_cntl[MODEM_DATA].ch);
+				&driver->smd_cntl[MODEM_DATA]);
 			if (result != DIAG_DCI_NO_ERROR) {
 				mutex_unlock(&driver->dci_mutex);
 				return result;
@@ -1045,7 +1048,7 @@ long diagchar_ioctl(struct file *filp,
 				 sizeof(struct diag_dci_health_stats)))
 			return -EFAULT;
 		mutex_lock(&dci_health_mutex);
-		i = diag_dci_find_client_index(current->tgid);
+		i = diag_dci_find_client_index_health(stats.client_id);
 		if (i != DCI_CLIENT_INDEX_INVALID) {
 			dci_params = &(driver->dci_client_tbl[i]);
 			stats.dropped_logs = dci_params->dropped_logs;
@@ -1123,7 +1126,7 @@ long diagchar_ioctl(struct file *filp,
 	case DIAG_IOCTL_VOTE_REAL_TIME:
 		if (copy_from_user(&rt_vote, (void *)ioarg, sizeof(struct
 							real_time_vote_t)))
-			result = -EFAULT;
+			return -EFAULT;
 		driver->real_time_update_busy++;
 		if (rt_vote.proc == DIAG_PROC_DCI) {
 			diag_dci_set_real_time(current->tgid,
@@ -1171,6 +1174,7 @@ static int diagchar_read(struct file *file, char __user *buf, size_t count,
 	int remote_token;
 	int exit_stat;
 	int clear_read_wakelock;
+	unsigned long flags;
 
 	for (i = 0; i < driver->num_clients; i++)
 		if (driver->client_map[i].pid == current->tgid)
@@ -1200,10 +1204,9 @@ static int diagchar_read(struct file *file, char __user *buf, size_t count,
 		for (i = 0; i < driver->buf_tbl_size; i++) {
 			if (driver->buf_tbl[i].length > 0) {
 #ifdef DIAG_DEBUG
-				pr_debug("diag: WRITING the buf address "
-				       "and length is %x , %d\n", (unsigned int)
-					(driver->buf_tbl[i].buf),
-					driver->buf_tbl[i].length);
+				pr_debug("diag: WRITING the buf address and length is %p , %d\n",
+					 driver->buf_tbl[i].buf,
+					 driver->buf_tbl[i].length);
 #endif
 				num_data++;
 				/* Copy the length of data being passed */
@@ -1224,10 +1227,9 @@ static int diagchar_read(struct file *file, char __user *buf, size_t count,
 				ret += driver->buf_tbl[i].length;
 drop:
 #ifdef DIAG_DEBUG
-				pr_debug("diag: DEQUEUE buf address and"
-				       " length is %x,%d\n", (unsigned int)
-				       (driver->buf_tbl[i].buf), driver->
-				       buf_tbl[i].length);
+				pr_debug("diag: DEQUEUE buf address and length is %p, %d\n",
+					 driver->buf_tbl[i].buf,
+					 driver->buf_tbl[i].length);
 #endif
 				diagmem_free(driver, (unsigned char *)
 				(driver->buf_tbl[i].buf), POOL_TYPE_HDLC);
@@ -1252,7 +1254,10 @@ drop:
 					process_lock_on_copy(&data->nrt_lock);
 					clear_read_wakelock++;
 				}
+				spin_lock_irqsave(&data->in_busy_lock, flags);
 				data->in_busy_1 = 0;
+				spin_unlock_irqrestore(&data->in_busy_lock,
+						       flags);
 			}
 			if (data->in_busy_2 == 1) {
 				num_data++;
@@ -1267,7 +1272,10 @@ drop:
 					process_lock_on_copy(&data->nrt_lock);
 					clear_read_wakelock++;
 				}
+				spin_lock_irqsave(&data->in_busy_lock, flags);
 				data->in_busy_2 = 0;
+				spin_unlock_irqrestore(&data->in_busy_lock,
+						       flags);
 			}
 		}
 		if (driver->supports_separate_cmdrsp) {
@@ -1474,6 +1482,10 @@ static int diagchar_write(struct file *file, const char __user *buf,
 	index = 0;
 	/* Get the packet type F3/log/event/Pkt response */
 	err = copy_from_user((&pkt_type), buf, 4);
+	if (err) {
+		pr_alert("diag: copy failed for pkt_type\n");
+		return -EAGAIN;
+	}
 	/* First 4 bytes indicate the type of payload - ignore these */
 	if (count < 4) {
 		pr_err("diag: Client sending short data\n");
@@ -1536,7 +1548,7 @@ static int diagchar_write(struct file *file, const char __user *buf,
 	}
 	if (pkt_type == CALLBACK_DATA_TYPE) {
 		if (payload_size > driver->itemsize) {
-			pr_err("diag: Dropping packet, packet payload size crosses 4KB limit. Current payload size %d\n",
+			pr_err("diag: Dropping packet, invalid packet size. Current payload size %d\n",
 				payload_size);
 			driver->dropped_count++;
 			return -EBADMSG;
@@ -1567,6 +1579,11 @@ static int diagchar_write(struct file *file, const char __user *buf,
 			return ret;
 		}
 		/* The packet is for the remote processor */
+		if (payload_size <= MIN_SIZ_ALLOW) {
+				pr_err("diag: Integer underflow in %s, payload size: %d",
+							__func__, payload_size);
+		return -EBADMSG;
+		}
 		token_offset = 4;
 		payload_size -= 4;
 		buf += 4;
@@ -1670,6 +1687,11 @@ static int diagchar_write(struct file *file, const char __user *buf,
 			diag_get_remote(*(int *)driver->user_space_data_buf);
 
 		if (remote_proc) {
+			if (payload_size <= MIN_SIZ_ALLOW) {
+				pr_err("diag: Integer underflow in %s, payload size: %d",
+							__func__, payload_size);
+				return -EBADMSG;
+			}
 			token_offset = 4;
 			payload_size -= 4;
 			buf += 4;

@@ -1,4 +1,4 @@
-ui_print("LG G2 Dorimanx Kernel installer");
+ui_print("Amperific SuperKANG Project");
 
 #mount system
 mount("ext4", "EMMC", "/dev/block/platform/msm_sdcc.1/by-name/system", "/system");

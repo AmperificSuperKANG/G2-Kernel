@@ -107,6 +107,10 @@
 #define DIAG_STM_WCNSS	0x04
 #define DIAG_STM_APPS	0x08
 
+#define DIAG_DIAG_STM		0x214
+
+#define BAD_PARAM_RESPONSE_MESSAGE 20
+
 /*
  * The status bit masks when received in a signal handler are to be
  * used in conjunction with the peripheral list bit mask to determine the
@@ -237,6 +241,7 @@ struct diag_smd_info {
 
 	int in_busy_1;
 	int in_busy_2;
+	spinlock_t in_busy_lock;
 
 	unsigned char *buf_in_1;
 	unsigned char *buf_in_2;
@@ -383,6 +388,7 @@ struct diagchar_dev {
 	wait_queue_head_t diag_read_wait_q;
 #endif
 	struct workqueue_struct *diag_wq;
+	struct workqueue_struct *diag_usb_wq;
 	struct work_struct diag_drain_work;
 	struct workqueue_struct *diag_cntl_wq;
 	uint8_t *msg_masks;

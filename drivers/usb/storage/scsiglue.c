@@ -242,6 +242,20 @@ static int slave_configure(struct scsi_device *sdev)
 					US_FL_SCM_MULT_TARG)) &&
 				us->protocol == USB_PR_BULK)
 			us->use_last_sector_hacks = 1;
+
+		if (us->sdev_autosuspend_delay >= 0) {
+			sdev->use_rpm_auto = 1;
+			sdev->autosuspend_delay = us->sdev_autosuspend_delay;
+		}
+
+		/*
+		 * This quirk enables sending consecutive TEST_UNIT_READY
+		 * commands in WRITE(10) command processing context. Increase
+		 * the timeout to 60 seconds.
+		 */
+		if (us->fflags & US_FL_TUR_AFTER_WRITE)
+			blk_queue_rq_timeout(sdev->request_queue, (60 * HZ));
+
 	} else {
 
 		/* Non-disk-type devices don't need to blacklist any pages

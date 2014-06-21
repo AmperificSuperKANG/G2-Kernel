@@ -542,25 +542,6 @@ static inline void msm_hs_write(struct uart_port *uport, unsigned int index,
 	writel_relaxed(value, uport->membase + offset);
 }
 
-static int sps_rx_disconnect(struct sps_pipe *sps_pipe_handler)
-{
-	struct sps_connect config;
-	int ret;
-
-	ret = sps_get_config(sps_pipe_handler, &config);
-	if (ret) {
-		pr_err("%s: sps_get_config() failed ret %d\n", __func__, ret);
-		return ret;
-	}
-	config.options |= SPS_O_POLL;
-	ret = sps_set_config(sps_pipe_handler, &config);
-	if (ret) {
-		pr_err("%s: sps_set_config() failed ret %d\n", __func__, ret);
-		return ret;
-	}
-	return sps_disconnect(sps_pipe_handler);
-}
-
 static void hex_dump_ipc(char *prefix, char *string, int size)
 {
 	char linebuf[512];
@@ -1218,7 +1199,7 @@ static void msm_hs_set_termios(struct uart_port *uport,
 				ret = wait_event_timeout(msm_uport->rx.wait,
 					msm_uport->rx_bam_inprogress == false,
 					RX_FLUSH_COMPLETE_TIMEOUT);
-			ret = sps_rx_disconnect(sps_pipe_handle);
+			ret = sps_disconnect(sps_pipe_handle);
 			if (ret)
 				MSM_HS_ERR("%s(): sps_disconnect failed\n",
 							__func__);
@@ -1311,7 +1292,7 @@ static void hsuart_disconnect_rx_endpoint_work(struct work_struct *w)
 	struct sps_pipe *sps_pipe_handle = rx->prod.pipe_handle;
 	int ret = 0;
 
-	ret = sps_rx_disconnect(sps_pipe_handle);
+	ret = sps_disconnect(sps_pipe_handle);
 	if (ret)
 		MSM_HS_ERR("%s(): sps_disconnect failed\n", __func__);
 
@@ -2120,12 +2101,6 @@ static int msm_hs_check_clock_off(struct uart_port *uport)
 	if (use_low_power_wakeup(msm_uport)) {
 		msm_uport->wakeup.ignore = 1;
 		enable_irq(msm_uport->wakeup.irq);
-		/*
-		 * keeping uport-irq enabled all the time
-		 * gates XO shutdown in idle power collapse. Disable
-		 * this only when wakeup irq is set.
-		 */
-		disable_irq(uport->irq);
 	}
 	wake_unlock(&msm_uport->dma_wake_lock);
 
@@ -2311,11 +2286,8 @@ void msm_hs_request_clock_on(struct uart_port *uport)
 	switch (msm_uport->clk_state) {
 	case MSM_HS_CLK_OFF:
 		wake_lock(&msm_uport->dma_wake_lock);
-		if (use_low_power_wakeup(msm_uport)) {
+		if (use_low_power_wakeup(msm_uport))
 			disable_irq_nosync(msm_uport->wakeup.irq);
-			/* uport-irq was disabled when clocked off */
-			enable_irq(uport->irq);
-		}
 		spin_unlock_irqrestore(&uport->lock, flags);
 
 		ret = msm_hs_clock_vote(msm_uport);
@@ -2605,8 +2577,6 @@ static int msm_hs_startup(struct uart_port *uport)
 	/* Initialize the tx */
 	tx->tx_ready_int_en = 0;
 	tx->dma_in_flight = 0;
-	msm_uport->tty_flush_receive = false;
-	MSM_HS_DBG("%s: Setting tty_flush_receive to false\n", __func__);
 
 	if (!is_blsp_uart(msm_uport)) {
 		tx->xfer.complete_func = msm_hs_dmov_tx_callback;
@@ -2629,7 +2599,7 @@ static int msm_hs_startup(struct uart_port *uport)
 	msm_uport->imr_reg |= UARTDM_ISR_CURRENT_CTS_BMSK;
 
 	/* TXLEV on empty TX fifo */
-	msm_hs_write(uport, UART_DM_TFWR, 4);
+	msm_hs_write(uport, UART_DM_TFWR, 0);
 	/*
 	 * Complete all device write related configuration before
 	 * queuing RX request. Hence mb() requires here.

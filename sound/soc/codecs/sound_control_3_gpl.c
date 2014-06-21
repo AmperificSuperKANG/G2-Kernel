@@ -22,7 +22,7 @@
 #include <linux/mfd/wcd9xxx/wcd9320_registers.h>
 
 #define SOUND_CONTROL_MAJOR_VERSION	3
-#define SOUND_CONTROL_MINOR_VERSION	2
+#define SOUND_CONTROL_MINOR_VERSION	3
 
 #define REG_SZ	21
 
@@ -145,8 +145,12 @@ int snd_hax_reg_access(unsigned int reg)
 		case TAIKO_A_CDC_TX3_VOL_CTL_GAIN:
 		case TAIKO_A_CDC_TX4_VOL_CTL_GAIN:
 		case TAIKO_A_CDC_TX5_VOL_CTL_GAIN:
+*/
+#ifdef CONFIG_MACH_LGE
 		case TAIKO_A_CDC_TX6_VOL_CTL_GAIN:
 		case TAIKO_A_CDC_TX7_VOL_CTL_GAIN:
+#endif
+/*
 		case TAIKO_A_CDC_TX8_VOL_CTL_GAIN:
 		case TAIKO_A_CDC_TX9_VOL_CTL_GAIN:
 		case TAIKO_A_CDC_TX10_VOL_CTL_GAIN:
@@ -179,7 +183,7 @@ static ssize_t cam_mic_gain_show(struct kobject *kobj,
 {
         return sprintf(buf, "%u\n",
 		taiko_read(fauxsound_codec_ptr,
-			TAIKO_A_CDC_TX6_VOL_CTL_GAIN));
+			TAIKO_A_CDC_TX7_VOL_CTL_GAIN));
 
 }
 
@@ -190,19 +194,41 @@ static ssize_t cam_mic_gain_store(struct kobject *kobj,
 
 	sscanf(buf, "%u %u", &lval, &chksum);
 
+#ifndef CONFIG_MACH_LGE
 	if (calc_checksum(lval, 0, chksum)) {
 		taiko_write(fauxsound_codec_ptr,
-			TAIKO_A_CDC_TX6_VOL_CTL_GAIN, lval);
+			TAIKO_A_CDC_TX7_VOL_CTL_GAIN, lval);
 	}
+#endif
 	return count;
 }
+
+#ifdef CONFIG_MACH_LGE
+static ssize_t lge_cam_mic_gain_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int lval;
+
+	sscanf(buf, "%u", &lval);
+
+	if (lval >= 255)
+		lval = 255;
+	if (lval < 0)
+		lval = 0;
+
+	taiko_write(fauxsound_codec_ptr,
+		TAIKO_A_CDC_TX7_VOL_CTL_GAIN, lval);
+
+	return count;
+}
+#endif
 
 static ssize_t mic_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%u\n",
 		taiko_read(fauxsound_codec_ptr,
-			TAIKO_A_CDC_TX7_VOL_CTL_GAIN));
+			TAIKO_A_CDC_TX6_VOL_CTL_GAIN));
 }
 
 static ssize_t mic_gain_store(struct kobject *kobj,
@@ -212,13 +238,35 @@ static ssize_t mic_gain_store(struct kobject *kobj,
 
 	sscanf(buf, "%u %u", &lval, &chksum);
 
+#ifndef CONFIG_MACH_LGE
 	if (calc_checksum(lval, 0, chksum)) {
 		taiko_write(fauxsound_codec_ptr,
-			TAIKO_A_CDC_TX7_VOL_CTL_GAIN, lval);
+			TAIKO_A_CDC_TX6_VOL_CTL_GAIN, lval);
 	}
+#endif
 	return count;
 
 }
+
+#ifdef CONFIG_MACH_LGE
+static ssize_t lge_mic_gain_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int lval;
+
+	sscanf(buf, "%u", &lval);
+
+	if (lval >= 255)
+		lval = 255;
+	if (lval < 0)
+		lval = 0;
+
+	taiko_write(fauxsound_codec_ptr,
+		TAIKO_A_CDC_TX6_VOL_CTL_GAIN, lval);
+
+	return count;
+}
+#endif
 
 static ssize_t speaker_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
@@ -238,14 +286,44 @@ static ssize_t speaker_gain_store(struct kobject *kobj,
 
 	sscanf(buf, "%u %u %u", &lval, &rval, &chksum);
 
+#ifndef CONFIG_MACH_LGE
 	if (calc_checksum(lval, rval, chksum)) {
+		/* we have mono speaker! lval = rval */
 		taiko_write(fauxsound_codec_ptr,
 			TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL, lval);
 		taiko_write(fauxsound_codec_ptr,
 			TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL, rval);
 	}
+#endif
 	return count;
 }
+
+#ifdef CONFIG_MACH_LGE
+static ssize_t lge_speaker_gain_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int lval, rval;
+
+	sscanf(buf, "%u %u", &lval, &rval);
+
+	if (lval >= 255)
+		lval = 255;
+	if (rval >= 255)
+		rval = 255;
+	if (lval < 0)
+		lval = 0;
+	if (rval < 0)
+		rval = 0;
+
+	/* we have mono speaker! lval = rval */
+	taiko_write(fauxsound_codec_ptr,
+		TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL, lval);
+	taiko_write(fauxsound_codec_ptr,
+		TAIKO_A_CDC_RX7_VOL_CTL_B2_CTL, rval);
+
+	return count;
+}
+#endif
 
 static ssize_t headphone_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
@@ -356,6 +434,26 @@ static struct kobj_attribute speaker_gain_attribute =
 		speaker_gain_show,
 		speaker_gain_store);
 
+#ifdef CONFIG_MACH_LGE
+static struct kobj_attribute lge_cam_mic_gain_attribute =
+	__ATTR(lge_cam_mic_gain,
+		0666,
+		cam_mic_gain_show,
+		lge_cam_mic_gain_store);
+
+static struct kobj_attribute lge_mic_gain_attribute =
+	__ATTR(lge_mic_gain,
+		0666,
+		mic_gain_show,
+		lge_mic_gain_store);
+
+static struct kobj_attribute lge_speaker_gain_attribute =
+	__ATTR(lge_speaker_gain,
+		0666,
+		speaker_gain_show,
+		lge_speaker_gain_store);
+#endif
+
 static struct kobj_attribute headphone_gain_attribute =
 	__ATTR(gpl_headphone_gain,
 		0666,
@@ -384,6 +482,11 @@ static struct attribute *sound_control_attrs[] =
 		&cam_mic_gain_attribute.attr,
 		&mic_gain_attribute.attr,
 		&speaker_gain_attribute.attr,
+#ifdef CONFIG_MACH_LGE
+		&lge_cam_mic_gain_attribute.attr,
+		&lge_mic_gain_attribute.attr,
+		&lge_speaker_gain_attribute.attr,
+#endif
 		&headphone_gain_attribute.attr,
 		&headphone_pa_gain_attribute.attr,
 		&sound_control_locked_attribute.attr,
