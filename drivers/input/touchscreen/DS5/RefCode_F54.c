@@ -15,11 +15,8 @@
 // FullRawCapacitance Support 0D button
 //
 #include "RefCode_F54.h"
-#if defined(CONFIG_MACH_MSM8974_VU3_KR)
-#include "TestLimits_vu3.h"
-#else
 #include "TestLimits.h"
-#endif
+
 #if 0
 #ifdef _DEBUG
 #define DEBUG_printk(format, ...) printk(format, __VA_ARGS__)
@@ -160,11 +157,8 @@ unsigned char TRX_Open[7] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00} ;
 unsigned char TRX_Gnd[7] = {0xff,0xff,0xff,0xff,0x3,0xff,0xfc} ;
 unsigned char TRX_Short[7] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00} ;
 int HighResistanceLowerLimit[3] = {-1000, -1000, -400};
-#if defined (CONFIG_MACH_MSM8974_G2_OPEN_COM) || defined (CONFIG_MACH_MSM8974_G2_OPT_AU)
-int HighResistanceUpperLimit[3] = {450, 500, 200};
-#else
 int HighResistanceUpperLimit[3] = {450, 450, 200};
-#endif
+
 
 enum {
 	STARTTIME,
@@ -382,22 +376,6 @@ int CompareImageReport(void)
 	int i,j,node_crack_count=0,rx_crack_count=0, row_crack_count = 0;
 
 	//Compare 0D area
-#if defined(CONFIG_MACH_MSM8974_VU3_KR)
-	if (ButtonCount > 0){
-		for(i = 0; i < ButtonCount; i++){
-			for(j=0; j<(int)F12_2DTxCount;j++){
-				if( (LowerImageLimit[j][F12_2DRxCount+i]>0) && (UpperImageLimit[j][F12_2DRxCount+i]>0 )){
-					if ((ImagepF[j][F12_2DRxCount+i] < LowerImageLimit[j][F12_2DRxCount+i]) ||
-						(ImagepF[j][F12_2DRxCount+i] > UpperImageLimit[j][F12_2DRxCount+i])){
-						printk("[Touch] ButtonCheck-FAIL Tx[%d] Rx[%d]\n",j,F12_2DRxCount+i);
-						result = false;
-						break;
-					}
-				}
-			}
-		}
-	}
-#else
 	if (ButtonCount > 0){
 		for(i = 0; i < ButtonCount; i++){
 			if ((ImagepF[TxChannelCount-1][F12_2DRxCount + i] < LowerImageLimit[TxChannelCount-1][F12_2DRxCount + i]) ||
@@ -409,7 +387,6 @@ int CompareImageReport(void)
 		}
 
 	}
-#endif
 	//Compare 2D area
 	for (j = 0; j < (int)F12_2DRxCount; j++){
 		extern int f54_window_crack;
@@ -1041,10 +1018,6 @@ void RunQueries(void)
   int txCount = 0;
   int offset = 0;
 	int i,j = 0;
-#if defined(CONFIG_MACH_MSM8974_VU3_KR)
-	int k = 0;
-	int cnt = 0;
-#endif
 
 	// Scan Page Description Table (PDT) to find all RMI functions presented by this device.
 	// The Table starts at $00EE. This and every sixth register (decrementing) is a function number
@@ -1064,18 +1037,14 @@ void RunQueries(void)
 				bHaveF01 = true;
 				break;
 			}
-#if defined(CONFIG_MACH_MSM8974_VU3_KR)
+#if 0
 		case 0x1a:
 			if(!bHaveF1A){
 				k =0;
 				Read8BitRegisters((cAddr-3), &F1AControlBase, 1);
 				Read8BitRegisters(F1AControlBase+1, &ButtonCount, 1);
-				//ButtonCount = log((double)ButtonCount+1 )/ log(2.0);
-				while(ButtonCount){
-					cnt++;
-					ButtonCount=(ButtonCount>>1);
-				}
-				ButtonCount=cnt;
+				ButtonCount = log((double)ButtonCount+1 )/ log(2.0);
+
 				for (i = 0; i < ButtonCount; i++){
 					Read8BitRegisters(F1AControlBase + 3 + k, &ButtonTx[i], 1);
 					Read8BitRegisters(F1AControlBase + 3 + k + 1 , &ButtonRx[i], 1);

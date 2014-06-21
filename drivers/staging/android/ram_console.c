@@ -13,8 +13,6 @@
  *
  */
 
-#define pr_fmt(fmt) "ram_console: " fmt
-
 #include <linux/console.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -30,8 +28,8 @@ static struct persistent_ram_zone *ram_console_zone;
 static const char *bootinfo;
 static size_t bootinfo_size;
 
-/*                                                                    
-                                                                       
+/* LGE : not use Reed-solmon ECC check for ram-console data integrity.
+  * this ECC use cpu-power intensively that lead  slow down a boot time
   */
 #define USE_RAM_CONSOLE_ECC	false
 
@@ -108,9 +106,6 @@ static ssize_t ram_console_read_old(struct file *file, char __user *buf,
 	char *str;
 	int ret;
 
-	if (dmesg_restrict && !capable(CAP_SYSLOG))
-		return -EPERM;
-
 	/* Main last_kmsg log */
 	if (pos < old_log_size) {
 		count = min(len, (size_t)(old_log_size - pos));
@@ -170,7 +165,7 @@ static int __init ram_console_late_init(void)
 
 	entry = create_proc_entry("last_kmsg", S_IFREG | S_IRUGO, NULL);
 	if (!entry) {
-		pr_err("failed to create proc entry\n");
+		printk(KERN_ERR "ram_console: failed to create proc entry\n");
 		persistent_ram_free_old(prz);
 		return 0;
 	}

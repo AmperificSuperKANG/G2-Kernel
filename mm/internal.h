@@ -90,7 +90,6 @@ extern unsigned long highest_memmap_pfn;
  */
 extern int isolate_lru_page(struct page *page);
 extern void putback_lru_page(struct page *page);
-extern unsigned long zone_reclaimable_pages(struct zone *zone);
 extern bool zone_reclaimable(struct zone *zone);
 
 /*
@@ -280,9 +279,6 @@ static inline struct page *mem_map_next(struct page *iter,
 #else
 #define __paginginit __init
 #endif
-
-/* Returns true if the gfp_mask allows use of ALLOC_NO_WATERMARK */
-bool gfp_pfmemalloc_allowed(gfp_t gfp_mask);
 
 /* Memory initialisation debug and verification */
 enum mminit_level {

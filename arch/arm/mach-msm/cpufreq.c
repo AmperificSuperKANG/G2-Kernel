@@ -30,8 +30,8 @@
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
+#include <trace/events/power.h>
 #include <mach/socinfo.h>
-#include <mach/cpufreq.h>
 #include <mach/msm_bus.h>
 
 #include "acpuclock.h"
@@ -77,33 +77,6 @@ struct cpufreq_suspend_t {
 
 static DEFINE_PER_CPU(struct cpufreq_suspend_t, cpufreq_suspend);
 
-struct cpu_freq {
-	uint32_t max;
-	uint32_t min;
-	uint32_t allowed_max;
-	uint32_t allowed_min;
-	uint32_t limits_init;
-};
-
-static DEFINE_PER_CPU(struct cpu_freq, cpu_freq_info);
-
-static int speed_bin, pvs_bin;
-void set_speed_pvs_bin(int speed, int pvs)
-{
-	speed_bin = speed;
-	pvs_bin = pvs;
-}
-
-void get_speed_bin(int *speed)
-{
-	*speed = speed_bin;
-}
-
-void get_pvs_bin(int *pvs)
-{
-	*pvs = pvs_bin;
-}
-
 static void update_l2_bw(int *also_cpu)
 {
 	int rc = 0, cpu;
@@ -141,27 +114,7 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 	int saved_sched_policy = -EINVAL;
 	int saved_sched_rt_prio = -EINVAL;
 	struct cpufreq_freqs freqs;
-	struct cpu_freq *limit = &per_cpu(cpu_freq_info, policy->cpu);
 	struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
-	struct cpufreq_frequency_table *table;
-
-	if (limit->limits_init) {
-		if (new_freq > limit->allowed_max) {
-			new_freq = limit->allowed_max;
-			pr_debug("max: limiting freq to %d\n", new_freq);
-		}
-
-		if (new_freq < limit->allowed_min) {
-			new_freq = limit->allowed_min;
-			pr_debug("min: limiting freq to %d\n", new_freq);
-		}
-	}
-
-	/* limits applied above must be in cpufreq table */
-	table = cpufreq_frequency_get_table(policy->cpu);
-	if (cpufreq_frequency_table_target(policy, table, new_freq,
-		CPUFREQ_RELATION_H, &index))
-		return -EINVAL;
 
 	freqs.old = policy->cur;
 	freqs.new = new_freq;
@@ -180,6 +133,7 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 
 	cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
 
+	trace_cpu_frequency_switch_start(freqs.old, freqs.new, policy->cpu);
 	if (is_clk) {
 		unsigned long rate = new_freq * 1000;
 		rate = clk_round_rate(cpu_clk[policy->cpu], rate);
@@ -192,8 +146,10 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 		ret = acpuclk_set_rate(policy->cpu, new_freq, SETRATE_CPUFREQ);
 	}
 
-	if (!ret)
+	if (!ret) {
+		trace_cpu_frequency_switch_end(policy->cpu);
 		cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
+	}
 
 	/* Restore priority after clock ramp-up */
 	if (freqs.new > freqs.old && saved_sched_policy >= 0) {
@@ -271,89 +227,13 @@ static int msm_cpufreq_verify(struct cpufreq_policy *policy)
 
 static unsigned int msm_cpufreq_get_freq(unsigned int cpu)
 {
+	if (is_clk && is_sync)
+		cpu = 0;
+
 	if (is_clk)
 		return clk_get_rate(cpu_clk[cpu]) / 1000;
 
 	return acpuclk_get_rate(cpu);
-}
-
-static inline int msm_cpufreq_limits_init(void)
-{
-	int cpu = 0;
-	int i = 0;
-	struct cpufreq_frequency_table *table = NULL;
-	uint32_t min = (uint32_t) -1;
-	uint32_t max = 0;
-	struct cpu_freq *limit = NULL;
-
-	for_each_possible_cpu(cpu) {
-		limit = &per_cpu(cpu_freq_info, cpu);
-		table = cpufreq_frequency_get_table(cpu);
-		if (table == NULL) {
-			pr_err("%s: error reading cpufreq table for cpu %d\n",
-					__func__, cpu);
-			continue;
-		}
-		for (i = 0; (table[i].frequency != CPUFREQ_TABLE_END); i++) {
-			if (table[i].frequency > max)
-				max = table[i].frequency;
-			if (table[i].frequency < min)
-				min = table[i].frequency;
-		}
-		limit->allowed_min = min;
-		limit->allowed_max = max;
-		limit->min = min;
-		limit->max = max;
-		limit->limits_init = 1;
-	}
-
-	return 0;
-}
-
-int msm_cpufreq_set_freq_limits(uint32_t cpu, uint32_t min, uint32_t max)
-{
-	struct cpu_freq *limit = &per_cpu(cpu_freq_info, cpu);
-
-	if (!limit->limits_init)
-		msm_cpufreq_limits_init();
-
-	if ((min != MSM_CPUFREQ_NO_LIMIT) &&
-		min >= limit->min && min <= limit->max)
-		limit->allowed_min = min;
-	else
-		limit->allowed_min = limit->min;
-
-
-	if ((max != MSM_CPUFREQ_NO_LIMIT) &&
-		max <= limit->max && max >= limit->min)
-		limit->allowed_max = max;
-	else
-		limit->allowed_max = limit->max;
-
-#if 0
-	pr_debug("%s: Limiting cpu %d min = %d, max = %d\n",
-			__func__, cpu,
-			limit->allowed_min, limit->allowed_max);
-#endif
-
-	return 0;
-}
-EXPORT_SYMBOL(msm_cpufreq_set_freq_limits);
-
-int msm_cpufreq_get_index(struct cpufreq_policy *policy, unsigned int freq)
-{
-	int index;
-	struct cpufreq_frequency_table *table;
-
-	table = cpufreq_frequency_get_table(policy->cpu);
-	if (unlikely(!table))
-		return -ENODEV;
-
-	for (index = 0; table[index].frequency != CPUFREQ_TABLE_END; index++)
-		if (table[index].frequency == freq)
-			return index;
-
-	return -EINVAL;
 }
 
 static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
@@ -376,21 +256,30 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 		|| cpu_is_msm8610() || (is_clk && is_sync))
 		cpumask_setall(policy->cpus);
 
+	cpu_work = &per_cpu(cpufreq_work, policy->cpu);
+	INIT_WORK(&cpu_work->work, set_cpu_work);
+	init_completion(&cpu_work->complete);
+
+	/* synchronous cpus share the same policy */
+	if (is_clk && !cpu_clk[policy->cpu])
+		return 0;
+
 	if (cpufreq_frequency_table_cpuinfo(policy, table)) {
 #ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
 		policy->cpuinfo.min_freq = CONFIG_MSM_CPU_FREQ_MIN;
 		policy->cpuinfo.max_freq = CONFIG_MSM_CPU_FREQ_MAX;
 #endif
 	}
+/*
 #ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
 	policy->min = CONFIG_MSM_CPU_FREQ_MIN;
 	policy->max = CONFIG_MSM_CPU_FREQ_MAX;
-#else
-#ifdef CONFIG_ARCH_MSM8974
+#endif
+*/
+
+	// Predefine max/min frequencies used for device boot
 	policy->max = 2265600;
 	policy->min = 300000;
-#endif
-#endif
 
 	if (is_clk)
 		cur_freq = clk_get_rate(cpu_clk[policy->cpu])/1000;
@@ -418,10 +307,6 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 
 	policy->cpuinfo.transition_latency =
 		acpuclk_get_switch_time() * NSEC_PER_USEC;
-
-	cpu_work = &per_cpu(cpufreq_work, policy->cpu);
-	INIT_WORK(&cpu_work->work, set_cpu_work);
-	init_completion(&cpu_work->complete);
 
 	return 0;
 }
@@ -452,15 +337,11 @@ static int __cpuinit msm_cpufreq_cpu_callback(struct notifier_block *nfb,
 	case CPU_UP_CANCELED:
 		if (is_clk) {
 			clk_disable_unprepare(cpu_clk[cpu]);
-			clk_disable_unprepare(l2_clk);
 			update_l2_bw(NULL);
 		}
 		break;
 	case CPU_UP_PREPARE:
 		if (is_clk) {
-			rc = clk_prepare_enable(l2_clk);
-			if (rc < 0)
-				return NOTIFY_BAD;
 			rc = clk_prepare_enable(cpu_clk[cpu]);
 			if (rc < 0)
 				return NOTIFY_BAD;

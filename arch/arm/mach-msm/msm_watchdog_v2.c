@@ -74,7 +74,7 @@ struct msm_watchdog_data {
 
 /*
  * On the kernel command line specify
- * msm_watchdog_v2.enable=1 to enable the watchdog
+ * msm_watchdog.enable=1 to enable the watchdog
  * By default watchdog is turned on
  */
 static int enable = 1;
@@ -82,7 +82,7 @@ module_param(enable, int, 0);
 
 /*
  * On the kernel command line specify
- * msm_watchdog_v2.WDT_HZ=<clock val in HZ> to set Watchdog
+ * msm_watchdog.WDT_HZ=<clock val in HZ> to set Watchdog
  * ticks. By default it is set to 32765.
  */
 static long WDT_HZ = 32765;
@@ -122,7 +122,6 @@ static int msm_watchdog_suspend(struct device *dev)
 	__raw_writel(1, wdog_dd->base + WDT0_RST);
 	__raw_writel(0, wdog_dd->base + WDT0_EN);
 	mb();
-	wdog_dd->last_pet = sched_clock();
 	return 0;
 }
 
@@ -135,7 +134,6 @@ static int msm_watchdog_resume(struct device *dev)
 	__raw_writel(1, wdog_dd->base + WDT0_EN);
 	__raw_writel(1, wdog_dd->base + WDT0_RST);
 	mb();
-	wdog_dd->last_pet = sched_clock();
 	return 0;
 }
 
@@ -148,9 +146,9 @@ static int panic_wdog_handler(struct notifier_block *this,
 		__raw_writel(0, wdog_dd->base + WDT0_EN);
 		mb();
 	} else {
-		__raw_writel(WDT_HZ * (panic_timeout + 10),
+		__raw_writel(WDT_HZ * (panic_timeout + 4),
 				wdog_dd->base + WDT0_BARK_TIME);
-		__raw_writel(WDT_HZ * (panic_timeout + 10),
+		__raw_writel(WDT_HZ * (panic_timeout + 4),
 				wdog_dd->base + WDT0_BITE_TIME);
 		__raw_writel(1, wdog_dd->base + WDT0_RST);
 	}
@@ -315,7 +313,6 @@ static void pet_watchdog_work(struct work_struct *work)
 		schedule_delayed_work_on(0, &wdog_dd->dogwork_struct,
 							delay_time);
 #ifdef CONFIG_MACH_LGE
-	/*                                      */
 	xo_therm_logging();
 #endif
 }
@@ -505,8 +502,9 @@ static int __devinit msm_wdog_dt_to_pdata(struct platform_device *pdev,
 	wdog_resource = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	pdata->size = resource_size(wdog_resource);
 	pdata->phys_base = wdog_resource->start;
-	if (unlikely(!(devm_request_region(&pdev->dev, pdata->phys_base,
-					pdata->size, "msm-watchdog")))) {
+	if (unlikely(!(devm_request_mem_region(&pdev->dev, pdata->phys_base,
+					       pdata->size, "msm-watchdog")))) {
+
 		dev_err(&pdev->dev, "%s cannot reserve watchdog region\n",
 								__func__);
 		return -ENXIO;

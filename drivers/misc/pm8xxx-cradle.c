@@ -6,6 +6,7 @@
 
 #include <linux/module.h>
 #include <linux/init.h>
+#include <linux/input.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/interrupt.h>
@@ -34,9 +35,7 @@ struct pm8xxx_cradle {
 	spinlock_t lock;
 	int state;
 #if defined CONFIG_MACH_MSM8974_VU3_KR
-	struct switch_dev pen_sdev;
 	int pen;
-	int pen_state;
 	struct delayed_work pen_work;
 #else
 	int camera;
@@ -47,24 +46,12 @@ struct pm8xxx_cradle {
 static struct workqueue_struct *cradle_wq;
 static struct pm8xxx_cradle *cradle;
 
-#if defined(A1_only)
-static int smartcover_status;
-
-int get_smartcover_status(void){
-	return smartcover_status;
-}
-
-static void set_smartcover_status(int status){
-	smartcover_status = status;
-}
-#endif
+static struct input_dev  *cradle_input;
 
 static void boot_cradle_det_func(void)
 {
 	int state;
-#if defined CONFIG_MACH_MSM8974_VU3_KR
-	int pen_state;
-#endif
+
 	if (cradle->pdata->hallic_pouch_detect_pin)
 		cradle->pouch = !gpio_get_value(cradle->pdata->hallic_pouch_detect_pin);
 
@@ -76,33 +63,12 @@ static void boot_cradle_det_func(void)
 
 	printk("%s : boot pen === > %d \n", __func__ , cradle->pen);
 
-	if (cradle->pouch == 1){
-		if(cradle->pen==1){
-			state=SMARTCOVER_POUCH_CLOSED;
-			pen_state=SMARTCOVER_PEN_IN;
-		}
-		else{
-			state=SMARTCOVER_POUCH_CLOSED;
-			pen_state=SMARTCOVER_PEN_OUT;
-		}
-	}
-	else{
-		if(cradle->pen==1){
-			state=SMARTCOVER_POUCH_OPENED;
-			pen_state=SMARTCOVER_PEN_IN;
-		}
-		else{
-			state=SMARTCOVER_POUCH_OPENED;
-			pen_state=SMARTCOVER_PEN_OUT;
-		}
-	}
-	printk("%s : [Cradle] boot cradle value : pouch_state is %d, pen_state is %d\n", __func__ , state, pen_state);
-	cradle->state = state;
-	wake_lock_timeout(&cradle->wake_lock, msecs_to_jiffies(3000));
-	switch_set_state(&cradle->sdev, cradle->state);
-	cradle->pen_state = pen_state;
-	wake_lock_timeout(&cradle->wake_lock, msecs_to_jiffies(3000));
-	switch_set_state(&cradle->pen_sdev, cradle->pen_state);
+	if (cradle->pouch == 1)
+		state = SMARTCOVER_POUCH_CLOSED;
+	else if (cradle->pen == 1)
+		state = SMARTCOVER_PEN_IN;
+	else
+		state = SMARTCOVER_POUCH_OPENED;
 #else
 	if (cradle->pdata->hallic_camera_detect_pin)
 		cradle->camera = !gpio_get_value(cradle->pdata->hallic_camera_detect_pin);
@@ -117,18 +83,23 @@ static void boot_cradle_det_func(void)
 		state = SMARTCOVER_CAMERA_OPENED;
 	else
 		state = SMARTCOVER_POUCH_OPENED;
+#endif
 
 	printk("%s : [Cradle] boot cradle value is %d\n", __func__ , state);
 	cradle->state = state;
 	wake_lock_timeout(&cradle->wake_lock, msecs_to_jiffies(3000));
 	switch_set_state(&cradle->sdev, cradle->state);
-#endif
+
+        input_report_switch(cradle_input, SW_LID, 
+                cradle->state == SMARTCOVER_POUCH_OPENED ? 0 : 1);
+        input_sync(cradle_input);
+
 }
 
 #if defined CONFIG_MACH_MSM8974_VU3_KR
 static void pm8xxx_pen_work_func(struct work_struct *work)
 {
-	int pen_state = 0;
+	int state = 0;
 	unsigned long flags;
 
 	spin_lock_irqsave(&cradle->lock, flags);
@@ -145,20 +116,20 @@ static void pm8xxx_pen_work_func(struct work_struct *work)
 
 
 	if (cradle->pen == 1)
-		pen_state = SMARTCOVER_PEN_IN;
+		state = SMARTCOVER_PEN_IN;
 	else if (cradle->pen == 0)
-		pen_state = SMARTCOVER_PEN_OUT;
+		state = SMARTCOVER_PEN_OUT;
 
-	if (cradle->pen_state != pen_state) {
-		cradle->pen_state = pen_state;
+	if (cradle->state != state) {
+		cradle->state = state;
 		spin_unlock_irqrestore(&cradle->lock, flags);
 		wake_lock_timeout(&cradle->wake_lock, msecs_to_jiffies(3000));
-		switch_set_state(&cradle->pen_sdev, cradle->pen_state);
-		printk("%s : [Cradle] pen value is %d\n", __func__ , pen_state);
+		switch_set_state(&cradle->sdev, cradle->state);
+		printk("%s : [Cradle] pen value is %d\n", __func__ , state);
 	}
 	else {
 		spin_unlock_irqrestore(&cradle->lock, flags);
-		printk("%s : [Cradle] pen value is %d (no change)\n", __func__ , pen_state);
+		printk("%s : [Cradle] pen value is %d (no change)\n", __func__ , state);
 	}
 }
 
@@ -234,16 +205,15 @@ static void pm8xxx_pouch_work_func(struct work_struct *work)
 	else if (cradle->pouch == 0)
 		state = SMARTCOVER_POUCH_OPENED;
 #endif
-
-#if defined(A1_only)
-	set_smartcover_status(state);
-#endif
 	if (cradle->state != state) {
 		cradle->state = state;
 		spin_unlock_irqrestore(&cradle->lock, flags);
 		wake_lock_timeout(&cradle->wake_lock, msecs_to_jiffies(3000));
 		switch_set_state(&cradle->sdev, cradle->state);
 		printk("%s : [Cradle] pouch value is %d\n", __func__ , state);
+                input_report_switch(cradle_input, SW_LID, 
+                        cradle->state == SMARTCOVER_POUCH_OPENED ? 0 : 1);
+                input_sync(cradle_input);
 	}
 	else {
 		spin_unlock_irqrestore(&cradle->lock, flags);
@@ -436,8 +406,6 @@ static int __devinit pm8xxx_cradle_probe(struct platform_device *pdev)
 	cradle->pouch = 0;
 #if defined CONFIG_MACH_MSM8974_VU3_KR
 	cradle->pen = 0;
-	cradle->pen_sdev.name = "pen_state";
-	cradle->pen_sdev.print_name = cradle_print_name;
 #else
 	cradle->camera = 0;
 #endif
@@ -447,11 +415,7 @@ static int __devinit pm8xxx_cradle_probe(struct platform_device *pdev)
 	ret = switch_dev_register(&cradle->sdev);
 	if (ret < 0)
 		goto err_switch_dev_register;
-#if defined CONFIG_MACH_MSM8974_VU3_KR
-	ret = switch_dev_register(&cradle->pen_sdev);
-    if (ret < 0)
-        goto err_switch_dev_register;
-#endif
+
 	if (pre_set_flag) {
 		cradle_set_deskdock(pre_set_flag);
 		cradle->state = pre_set_flag;
@@ -575,9 +539,6 @@ err_request_irq:
 
 err_switch_dev_register:
 	switch_dev_unregister(&cradle->sdev);
-#if defined CONFIG_MACH_MSM8974_VU3_KR
-	switch_dev_unregister(&cradle->pen_sdev);
-#endif
 	kfree(cradle);
 	return ret;
 }
@@ -635,10 +596,40 @@ static struct platform_driver pm8xxx_cradle_driver = {
 	},
 };
 
+static int cradle_input_device_create(void){
+        int err = 0;
+
+        cradle_input = input_allocate_device();
+        if (!cradle_input) {
+                err = -ENOMEM;
+                goto exit;
+        }
+
+        cradle_input->name = "smartcover";
+        cradle_input->phys = "/dev/input/smartcover";
+
+        set_bit(EV_SW, cradle_input->evbit);
+        set_bit(SW_LID, cradle_input->swbit);
+
+        err = input_register_device(cradle_input);
+        if (err) {
+                goto exit_free;
+        }
+        return 0;
+
+exit_free:
+        input_free_device(cradle_input);
+        cradle_input = NULL;
+exit:
+        return err;
+
+}
+
 static int __init pm8xxx_cradle_init(void)
 {
-	cradle_wq = create_singlethread_workqueue("cradle_wq");
-       printk(KERN_ERR "cradle init \n");
+        cradle_input_device_create();
+        cradle_wq = create_singlethread_workqueue("cradle_wq");
+        printk(KERN_ERR "cradle init \n");
 	if (!cradle_wq)
 		return -ENOMEM;
 	return platform_driver_register(&pm8xxx_cradle_driver);
@@ -649,6 +640,7 @@ static void __exit pm8xxx_cradle_exit(void)
 {
 	if (cradle_wq)
 		destroy_workqueue(cradle_wq);
+        input_unregister_device(cradle_input);
 	platform_driver_unregister(&pm8xxx_cradle_driver);
 }
 module_exit(pm8xxx_cradle_exit);

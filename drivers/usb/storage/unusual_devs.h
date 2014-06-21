@@ -226,20 +226,6 @@ UNUSUAL_DEV(  0x0421, 0x0495, 0x0370, 0x0370,
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_MAX_SECTORS_64 ),
 
-/* Reported by Daniele Forsi <dforsi@gmail.com> */
-UNUSUAL_DEV(  0x0421, 0x04b9, 0x0350, 0x0350,
-		"Nokia",
-		"5300",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_MAX_SECTORS_64 ),
-
-/* Patch submitted by Victor A. Santos <victoraur.santos@gmail.com> */
-UNUSUAL_DEV(  0x0421, 0x05af, 0x0742, 0x0742,
-		"Nokia",
-		"305",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_MAX_SECTORS_64),
-
 /* Patch submitted by Mikhail Zolotaryov <lebon@lebon.org.ua> */
 UNUSUAL_DEV(  0x0421, 0x06aa, 0x1110, 0x1110,
 		"Nokia",
@@ -1933,6 +1919,13 @@ UNUSUAL_DEV(  0x1652, 0x6600, 0x0201, 0x0201,
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_IGNORE_RESIDUE ),
 
+/* Reported by Jesse Feddema <jdfeddema@gmail.com> */
+UNUSUAL_DEV(  0x177f, 0x0400, 0x0000, 0x0000,
+		"Yarvik",
+		"PMP400",
+		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
+		US_FL_BULK_IGNORE_TAG | US_FL_MAX_SECTORS_64 ),
+
 /* Reported by Hans de Goede <hdegoede@redhat.com>
  * These Appotech controllers are found in Picture Frames, they provide a
  * (buggy) emulation of a cdrom drive which contains the windows software
@@ -2065,12 +2058,6 @@ UNUSUAL_DEV( 0xed10, 0x7636, 0x0001, 0x0001,
 		"TGE",
 		"Digital MP3 Audio Player",
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL, US_FL_NOT_LOCKABLE ),
-
-/* Reported by Pavankumar Kondeti <pkondeti@codeaurora.org> */
-UNUSUAL_DEV(0x0925, 0x9011, 0x0100, 0x0100,
-		"TMC",
-		"USB DISK",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL, US_FL_TUR_AFTER_WRITE),
 
 /* Control/Bulk transport for all SubClass values */
 USUAL_DEV(USB_SC_RBC, USB_PR_CB, USB_US_TYPE_STOR),

@@ -48,7 +48,7 @@
 
 		qcom,clk-rates = <400000 20000000 25000000 50000000 100000000 200000000>;
 		qcom,bus-speed-mode = "HS200_1p8v", "DDR_1p8v";
-		qcom,cpu-dma-latency-us = <50>;
+		qcom,cpu-dma-latency-us = <200>;
 
 		qcom,msm-bus,name = "sdhc1";
 		qcom,msm-bus,num-cases = <8>;
@@ -97,7 +97,7 @@
 
 	/* Below is SDCC2 */
 	sdcc2_rev_a: qcom,sdcc_rev_a@f98a4000 {
-		cell-index = <2>; /* SDC2 WLAN slot */
+		cell-index = <2>; /* SDC2 SD card slot */
 		compatible = "qcom,msm-sdcc";
 		reg = <0xf98a4000 0x800>,
 			<0xf98a4800 0x100>,
@@ -112,6 +112,7 @@
 				1 &intc 0 220 0
 				2 &msmgpio 74 0x3>;
 		interrupt-names = "core_irq", "bam_irq", "wlan_oob_irq";
+		qcom,wifi-control-func;
 
 		vdd-supply = <&pm8941_l21>;
 		vdd-io-supply = <&pm8941_l13>;
@@ -154,7 +155,7 @@
 	};
 
 	sdcc2_rev_b: qcom,sdcc_rev_b@f98a4000 {
-		cell-index = <2>; /* SDC2 WLAN slot */
+		cell-index = <2>; /* SDC2 SD card slot */
 		compatible = "qcom,msm-sdcc";
 		reg = <0xf98a4000 0x800>,
 			<0xf98a4800 0x100>,
@@ -169,6 +170,7 @@
 				1 &intc 0 220 0
 				2 &msmgpio 44 0x3>;
 		interrupt-names = "core_irq", "bam_irq", "wlan_oob_irq";
+		qcom,wifi-control-func;
 
 		vdd-supply = <&pm8941_l21>;
 		vdd-io-supply = <&pm8941_l13>;
@@ -209,9 +211,9 @@
 		revision = "rev_b";
 		status = "ok";
 	};
-
+	
 	sdcc2_rev_c: qcom,sdcc_rev_c@f98a4000 {
-		cell-index = <2>; /* SDC2 WLAN slot */
+		cell-index = <2>; /* SDC2 SD card slot */
 		compatible = "qcom,msm-sdcc";
 		reg = <0xf98a4000 0x800>,
 			<0xf98a4800 0x100>,
@@ -226,6 +228,7 @@
 				1 &intc 0 220 0
 				2 &msmgpio 44 0x3>;
 		interrupt-names = "core_irq", "bam_irq", "wlan_oob_irq";
+		qcom,wifi-control-func;
 
 		vdd-supply = <&pm8941_l21>;
 		vdd-io-supply = <&pm8941_s3>;

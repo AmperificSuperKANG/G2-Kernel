@@ -264,13 +264,17 @@ ehci_urb_done(struct ehci_hcd *ehci, struct urb *urb, int status)
 __releases(ehci->lock)
 __acquires(ehci->lock)
 {
-	if (usb_pipetype(urb->pipe) == PIPE_INTERRUPT) {
-		/* ... update hc-wide periodic stats */
-		ehci_to_hcd(ehci)->self.bandwidth_int_reqs--;
-	}
+	if (likely (urb->hcpriv != NULL)) {
+		struct ehci_qh	*qh = (struct ehci_qh *) urb->hcpriv;
 
-	if (usb_pipetype(urb->pipe) != PIPE_ISOCHRONOUS)
-		qh_put((struct ehci_qh *) urb->hcpriv);
+		/* S-mask in a QH means it's an interrupt urb */
+		if ((qh->hw->hw_info2 & cpu_to_hc32(ehci, QH_SMASK)) != 0) {
+
+			/* ... update hc-wide periodic stats (for usbfs) */
+			ehci_to_hcd(ehci)->self.bandwidth_int_reqs--;
+		}
+		qh_put (qh);
+	}
 
 	if (unlikely(urb->unlinked)) {
 		COUNT(ehci->stats.unlink);
@@ -633,8 +637,7 @@ qh_urb_transaction (
 	qtd->urb = urb;
 
 	token = QTD_STS_ACTIVE;
-	if (!ehci->disable_cerr)
-		token |= (EHCI_TUNE_CERR << 10);
+	token |= (EHCI_TUNE_CERR << 10);
 	/* for split transactions, SplitXState initialized to zero */
 
 	len = urb->transfer_buffer_length;

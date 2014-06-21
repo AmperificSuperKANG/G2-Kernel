@@ -35,7 +35,6 @@
 #include <mach/rpm-regulator-smd.h>
 #include <mach/msm_bus.h>
 #include <mach/msm_dcvs.h>
-#include <mach/cpufreq.h>
 
 #include "acpuclock.h"
 #include "acpuclock-krait.h"
@@ -45,6 +44,15 @@
 #define PRI_SRC_SEL_SEC_SRC	0
 #define PRI_SRC_SEL_HFPLL	1
 #define PRI_SRC_SEL_HFPLL_DIV2	2
+
+/*
+ * added userspace interface for speed_bin & pvs_bin info
+ * 2013-06-07 fred.cho@lge.com
+ */
+#ifdef CONFIG_MACH_LGE
+int g_speed_bin;
+int g_pvs_bin;
+#endif
 
 static DEFINE_MUTEX(driver_lock);
 static DEFINE_SPINLOCK(l2_lock);
@@ -449,7 +457,7 @@ static int calculate_vdd_dig(const struct acpu_level *tgt)
 		   max(l2_pll_vdd_dig, cpu_pll_vdd_dig));
 }
 
-static bool enable_boost = true;
+static bool enable_boost = false;
 module_param_named(boost, enable_boost, bool, S_IRUGO | S_IWUSR);
 
 static int calculate_vdd_core(const struct acpu_level *tgt)
@@ -955,53 +963,57 @@ static void __init bus_init(const struct l2_level *l2_level)
 		dev_err(drv.dev, "initial bandwidth req failed (%d)\n", ret);
 }
 
-#ifdef CONFIG_CPU_VOLTAGE_TABLE
+#define MAX_VDD 1300
+#define MIN_VDD 600
 
-#define HFPLL_MIN_VDD		 600000
-#define HFPLL_MAX_VDD		1350000
-
-ssize_t acpuclk_get_vdd_levels_str(char *buf) {
-
+ssize_t acpuclk_get_vdd_levels_str(char *buf)
+{
+    
 	int i, len = 0;
-
+    
 	if (buf) {
-		mutex_lock(&driver_lock);
-
 		for (i = 0; drv.acpu_freq_tbl[i].speed.khz; i++) {
-			/* updated to use uv required by 8x60 architecture - faux123 */
-			len += sprintf(buf + len, "%8lu: %8d\n", drv.acpu_freq_tbl[i].speed.khz,
-				drv.acpu_freq_tbl[i].vdd_core );
+            if (drv.acpu_freq_tbl[i].use_for_scaling) {
+                len += sprintf(buf + len, "%lumhz: %i mV\n",
+                           drv.acpu_freq_tbl[i].speed.khz/1000,
+                           drv.acpu_freq_tbl[i].vdd_core/1000 );
+            }
 		}
-
-		mutex_unlock(&driver_lock);
 	}
 	return len;
 }
 
-/* updated to use uv required by 8x60 architecture - faux123 */
-void acpuclk_set_vdd(unsigned int khz, int vdd_uv) {
-
+ssize_t acpuclk_set_vdd(char *buf)
+{
+	unsigned int cur_volt;
+	char count[10];
 	int i;
-	unsigned int new_vdd_uv;
-
-	mutex_lock(&driver_lock);
-
-	for (i = 0; drv.acpu_freq_tbl[i].speed.khz; i++) {
-		if (khz == 0)
-			new_vdd_uv = min(max((unsigned int)(drv.acpu_freq_tbl[i].vdd_core + vdd_uv),
-				(unsigned int)HFPLL_MIN_VDD), (unsigned int)HFPLL_MAX_VDD);
-		else if ( drv.acpu_freq_tbl[i].speed.khz == khz)
-			new_vdd_uv = min(max((unsigned int)vdd_uv,
-				(unsigned int)HFPLL_MIN_VDD), (unsigned int)HFPLL_MAX_VDD);
-		else 
-			continue;
-
-		drv.acpu_freq_tbl[i].vdd_core = new_vdd_uv;
+    int ret = 0;
+    
+	if (!buf)
+		return -EINVAL;
+    
+	for (i = 0; i < drv.acpu_freq_tbl[i].speed.khz; i++) {
+        if (drv.acpu_freq_tbl[i].use_for_scaling) {
+            ret = sscanf(buf, "%d", &cur_volt);
+        
+            if (ret != 1)
+                return -EINVAL;
+        
+            if (cur_volt > MAX_VDD) {
+                cur_volt = MAX_VDD;
+            } else if (cur_volt < MIN_VDD) {
+                cur_volt = MIN_VDD;
+            }
+        
+            drv.acpu_freq_tbl[i].vdd_core = cur_volt*1000;
+                
+            ret = sscanf(buf, "%s", count);
+            buf += (strlen(count)+1);
+        }
 	}
-	pr_warn("faux123: user voltage table modified!\n");
-	mutex_unlock(&driver_lock);
+	return ret;
 }
-#endif	/* CONFIG_CPU_VOTALGE_TABLE */
 
 #ifdef CONFIG_CPU_FREQ_MSM
 static struct cpufreq_frequency_table freq_table[NR_CPUS][35];
@@ -1148,17 +1160,15 @@ void __init get_krait_bin_format_b(void __iomem *base, struct bin_info *bin)
 
 	pte_efuse = readl_relaxed(base);
 	redundant_sel = (pte_efuse >> 24) & 0x7;
-	bin->pvs_rev = (pte_efuse >> 4) & 0x3;
 	bin->speed = pte_efuse & 0x7;
-	/* PVS number is in bits 31, 8, 7, 6 */
-	bin->pvs = ((pte_efuse >> 28) & 0x8) | ((pte_efuse >> 6) & 0x7);
+	bin->pvs = (pte_efuse >> 6) & 0x7;
 
 	switch (redundant_sel) {
 	case 1:
-		bin->speed = (pte_efuse >> 27) & 0xF;
+		bin->speed = (pte_efuse >> 27) & 0x7;
 		break;
 	case 2:
-		bin->pvs = (pte_efuse >> 27) & 0xF;
+		bin->pvs = (pte_efuse >> 27) & 0x7;
 		break;
 	}
 	bin->speed_valid = true;
@@ -1194,21 +1204,22 @@ static struct pvs_table * __init select_freq_plan(
 	if (bin.pvs_valid) {
 		drv.pvs_bin = bin.pvs;
 		dev_info(drv.dev, "ACPU PVS: %d\n", drv.pvs_bin);
-		drv.pvs_rev = bin.pvs_rev;
-		dev_info(drv.dev, "ACPU PVS REVISION: %d\n", drv.pvs_rev);
 	} else {
 		drv.pvs_bin = 0;
 		dev_warn(drv.dev, "ACPU PVS: Defaulting to %d\n",
 			 drv.pvs_bin);
 	}
 
-	/*
-                                                          
-                               
-  */
-	set_speed_pvs_bin(drv.speed_bin, drv.pvs_bin);
+/*
+ * added userspace interface for speed_bin & pvs_bin info
+ * 2013-06-07 fred.cho@lge.com
+ */
+#ifdef CONFIG_MACH_LGE
+	g_speed_bin = drv.speed_bin;
+	g_pvs_bin = drv.pvs_bin;
+#endif
 
-	return &params->pvs_tables[drv.pvs_rev][drv.speed_bin][drv.pvs_bin];
+	return &params->pvs_tables[drv.speed_bin][drv.pvs_bin];
 }
 
 static void __init drv_data_init(struct device *dev,

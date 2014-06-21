@@ -500,7 +500,7 @@ static void mm_init_aio(struct mm_struct *mm)
 {
 #ifdef CONFIG_AIO
 	spin_lock_init(&mm->ioctx_lock);
-	INIT_RADIX_TREE(&mm->ioctx_rtree, GFP_KERNEL);
+	INIT_HLIST_HEAD(&mm->ioctx_list);
 #endif
 }
 
@@ -801,7 +801,7 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
  * Allocate a new mm structure and copy contents from the
  * mm structure of the passed in task structure.
  */
-static struct mm_struct *dup_mm(struct task_struct *tsk)
+struct mm_struct *dup_mm(struct task_struct *tsk)
 {
 	struct mm_struct *mm, *oldmm = current->mm;
 	int err;
@@ -1038,11 +1038,6 @@ static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
 	sig->nr_threads = 1;
 	atomic_set(&sig->live, 1);
 	atomic_set(&sig->sigcnt, 1);
-
-	/* list_add(thread_node, thread_head) without INIT_LIST_HEAD() */
-	sig->thread_head = (struct list_head)LIST_HEAD_INIT(tsk->thread_node);
-	tsk->thread_node = (struct list_head)LIST_HEAD_INIT(sig->thread_head);
-
 	init_waitqueue_head(&sig->wait_chldexit);
 	if (clone_flags & CLONE_NEWPID)
 		sig->flags |= SIGNAL_UNKILLABLE;
@@ -1098,10 +1093,8 @@ static void rt_mutex_init_task(struct task_struct *p)
 {
 	raw_spin_lock_init(&p->pi_lock);
 #ifdef CONFIG_RT_MUTEXES
-	p->pi_waiters = RB_ROOT;
-	p->pi_waiters_leftmost = NULL;
+	plist_head_init(&p->pi_waiters);
 	p->pi_blocked_on = NULL;
-	p->pi_top_task = NULL;
 #endif
 }
 
@@ -1228,7 +1221,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	p->utime = p->stime = p->gtime = 0;
 	p->utimescaled = p->stimescaled = 0;
 #ifndef CONFIG_VIRT_CPU_ACCOUNTING
-	p->prev_cputime.utime = p->prev_cputime.stime = 0;
+	p->prev_utime = p->prev_stime = 0;
 #endif
 #if defined(SPLIT_RSS_COUNTING)
 	memset(&p->rss_stat, 0, sizeof(p->rss_stat));
@@ -1297,9 +1290,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 #endif
 
 	/* Perform scheduler related setup. Assign this task to a CPU. */
-	retval = sched_fork(p);
-	if (retval)
-		goto bad_fork_cleanup_policy;
+	sched_fork(p);
 
 	retval = perf_event_init_task(p);
 	if (retval)
@@ -1442,7 +1433,6 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		atomic_inc(&current->signal->sigcnt);
 		p->group_leader = current->group_leader;
 		list_add_tail_rcu(&p->thread_group, &p->group_leader->thread_group);
-		list_add_tail_rcu(&p->thread_node, &p->signal->thread_head);
 	}
 
 	if (likely(p->pid)) {
@@ -1458,9 +1448,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 			attach_pid(p, PIDTYPE_SID, task_session(current));
 			list_add_tail(&p->sibling, &p->real_parent->children);
 			list_add_tail_rcu(&p->tasks, &init_task.tasks);
-#ifdef CONFIG_ANDROID_LMK_ADJ_RBTREE
 			add_2_adj_tree(p);
-#endif
 			__this_cpu_inc(process_counts);
 		}
 		attach_pid(p, PIDTYPE_PID, pid);

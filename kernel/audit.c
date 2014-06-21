@@ -69,7 +69,7 @@
 #define AUDIT_DISABLED		-1
 #define AUDIT_UNINITIALIZED	0
 #define AUDIT_INITIALIZED	1
-static int	audit_initialized = AUDIT_DISABLED;
+static int	audit_initialized;
 
 #define AUDIT_OFF	0
 #define AUDIT_ON	1
@@ -396,19 +396,6 @@ static void audit_printk_skb(struct sk_buff *skb)
 	audit_hold_skb(skb);
 }
 
-//                   
-static void audit_printk_skb_without_drop(struct sk_buff *skb)
-{
-	struct nlmsghdr *nlh = nlmsg_hdr(skb);
-	char *data = NLMSG_DATA(nlh);
-	if (nlh->nlmsg_type != AUDIT_EOE) {
-		if (printk_ratelimit())
-			printk(KERN_NOTICE "type=%d %s\n", nlh->nlmsg_type, data);
-		else
-			audit_log_lost("printk limit exceeded\n");
-	}
-}
-
 static void kauditd_send_skb(struct sk_buff *skb)
 {
 	int err;
@@ -422,11 +409,9 @@ static void kauditd_send_skb(struct sk_buff *skb)
 		audit_pid = 0;
 		/* we might get lucky and get this in the next auditd */
 		audit_hold_skb(skb);
-	} else {
-		audit_printk_skb_without_drop(skb); //                   
+	} else
 		/* drop the extra reference if sent ok */
 		consume_skb(skb);
-	}
 }
 
 static int kauditd_thread(void *dummy)
@@ -462,7 +447,7 @@ static int kauditd_thread(void *dummy)
 		wake_up(&audit_backlog_wait);
 		if (skb) {
 			if (audit_pid)
-				kauditd_send_skb(skb); 
+				kauditd_send_skb(skb);
 			else
 				audit_printk_skb(skb);
 		} else {
@@ -1183,7 +1168,7 @@ struct audit_buffer *audit_log_start(struct audit_context *ctx, gfp_t gfp_mask,
 
 			/* Wait for auditd to drain the queue a little */
 			DECLARE_WAITQUEUE(wait, current);
-			set_current_state(TASK_UNINTERRUPTIBLE);
+			set_current_state(TASK_INTERRUPTIBLE);
 			add_wait_queue(&audit_backlog_wait, &wait);
 
 			if (audit_backlog_limit &&

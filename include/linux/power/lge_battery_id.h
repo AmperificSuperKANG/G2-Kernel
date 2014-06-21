@@ -28,7 +28,6 @@ enum {
 struct lge_battery_id_platform_data {
 	uint id;
 	uint pullup;
-	uint batt_info;
 };
-#endif  /*                      */
+#endif  // __LGE_BATTERY_ID_H__
 

@@ -174,7 +174,7 @@ struct ion_heap {
 	void *priv;
 	struct list_head free_list;
 	size_t free_list_size;
-	spinlock_t free_lock;
+	struct rt_mutex lock;
 	wait_queue_head_t waitqueue;
 	struct task_struct *task;
 	int (*debug_show)(struct ion_heap *heap, struct seq_file *, void *);
@@ -392,8 +392,5 @@ void ion_page_pool_free(struct ion_page_pool *, struct page *);
  */
 int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
 			  int nr_to_scan);
-
-int ion_walk_heaps(struct ion_client *client, int heap_id, void *data,
-			int (*f)(struct ion_heap *heap, void *data));
 
 #endif /* _ION_PRIV_H */

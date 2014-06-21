@@ -200,11 +200,6 @@ devm_request_irq(struct device *dev, unsigned int irq, irq_handler_t handler,
 					 devname, dev_id);
 }
 
-extern int __must_check
-devm_request_any_context_irq(struct device *dev, unsigned int irq,
-		 irq_handler_t handler, unsigned long irqflags,
-		 const char *devname, void *dev_id);
-
 extern void devm_free_irq(struct device *dev, unsigned int irq, void *dev_id);
 
 /*
@@ -441,8 +436,6 @@ enum
 
 	NR_SOFTIRQS
 };
-
-#define SOFTIRQ_STOP_IDLE_MASK (~(1 << RCU_SOFTIRQ))
 
 /* map softirq index to softirq name. update 'softirq_to_name' in
  * kernel/softirq.c when adding a new softirq.
@@ -708,37 +701,4 @@ extern int early_irq_init(void);
 extern int arch_probe_nr_irqs(void);
 extern int arch_early_irq_init(void);
 extern void irq_set_pending(unsigned int irq);
-
-#ifdef CONFIG_ZERO_WAIT
-extern void set_irq_handler(unsigned int irq, irq_handler_t handler);
-extern int zw_irq_set_irq_wake(unsigned int irq, unsigned int on);
-
-static inline void zw_enable_irq_wake(unsigned int irq)
-{
-	zw_irq_set_irq_wake(irq, 1);
-}
-
-static inline void zw_disable_irq_wake(unsigned int irq)
-{
-	zw_irq_set_irq_wake(irq, 0);
-}
-#else
-static inline void set_irq_handler(unsigned int irq, irq_handler_t handler)
-{
-	return;
-}
-static inline int zw_irq_set_irq_wake(unsigned int irq, unsigned int on)
-{
-	return 0;
-}
-static inline void zw_enable_irq_wake(unsigned int irq)
-{
-	return;
-}
-static inline void zw_disable_irq_wake(unsigned int irq)
-{
-	return;
-}
-#endif
-
 #endif

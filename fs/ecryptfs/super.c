@@ -133,7 +133,7 @@ static int ecryptfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 static void ecryptfs_evict_inode(struct inode *inode)
 {
 	truncate_inode_pages(&inode->i_data, 0);
-	clear_inode(inode);
+	end_writeback(inode);
 	iput(ecryptfs_inode_to_lower(inode));
 }
 
@@ -177,8 +177,6 @@ static int ecryptfs_show_options(struct seq_file *m, struct dentry *root)
 		seq_printf(m, ",ecryptfs_unlink_sigs");
 	if (mount_crypt_stat->flags & ECRYPTFS_GLOBAL_MOUNT_AUTH_TOK_ONLY)
 		seq_printf(m, ",ecryptfs_mount_auth_tok_only");
-	if (mount_crypt_stat->flags & ECRYPTFS_DECRYPTION_ONLY) // FEATURE_SDCARD_ENCRYPTION
-		seq_printf(m, ",decryption_only");
 
 	return 0;
 }

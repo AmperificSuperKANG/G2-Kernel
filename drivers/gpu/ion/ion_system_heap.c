@@ -34,7 +34,7 @@ static unsigned int high_order_gfp_flags = (GFP_HIGHUSER | __GFP_ZERO |
 					    __GFP_NO_KSWAPD) & ~__GFP_WAIT;
 static unsigned int low_order_gfp_flags  = (GFP_HIGHUSER | __GFP_ZERO |
 					 __GFP_NOWARN);
-static const unsigned int orders[] = {9, 8, 4, 0};
+static const unsigned int orders[] = {8, 4, 0};
 static const int num_orders = ARRAY_SIZE(orders);
 static int order_to_index(unsigned int order)
 {
@@ -185,6 +185,9 @@ static int ion_system_heap_allocate(struct ion_heap *heap,
 	sg = table->sgl;
 	list_for_each_entry_safe(info, tmp_info, &pages, list) {
 		struct page *page = info->page;
+#ifdef CONFIG_LGE_MEMORY_INFO /* NeedToRetouch at M8974AAAAANLYA0050056 */
+		__inc_zone_page_state(page, NR_ION_PAGES);
+#endif
 		if (split_pages) {
 			for (i = 0; i < (1 << info->order); i++) {
 				sg_set_page(sg, page + i, PAGE_SIZE, 0);
@@ -205,6 +208,9 @@ err1:
 	kfree(table);
 err:
 	list_for_each_entry_safe(info, tmp_info, &pages, list) {
+#ifdef CONFIG_LGE_MEMORY_INFO /* NeedToRetouch at M8974AAAAANLYA0050056 */
+		__dec_zone_page_state(info->page, NR_ION_PAGES);
+#endif
 		free_buffer_page(sys_heap, buffer, info->page, info->order);
 		kfree(info);
 	}
@@ -225,9 +231,17 @@ void ion_system_heap_free(struct ion_buffer *buffer)
 	if (!(buffer->flags & ION_FLAG_FREED_FROM_SHRINKER))
 		ion_heap_buffer_zero(buffer);
 
+#ifdef CONFIG_LGE_MEMORY_INFO /* NeedToRetouch at M8974AAAAANLYA0050056 */
+	for_each_sg(table->sgl, sg, table->nents, i) {
+		__dec_zone_page_state(sg_page(sg), NR_ION_PAGES);
+		free_buffer_page(sys_heap, buffer, sg_page(sg),
+				get_order(sg_dma_len(sg)));
+	}
+#else
 	for_each_sg(table->sgl, sg, table->nents, i)
 		free_buffer_page(sys_heap, buffer, sg_page(sg),
 				get_order(sg_dma_len(sg)));
+#endif
 	sg_free_table(table);
 	kfree(table);
 }

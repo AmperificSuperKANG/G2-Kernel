@@ -1,7 +1,7 @@
 /*
  * f_qdss.c -- QDSS function Driver
  *
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -18,7 +18,6 @@
 #include <linux/usb/usb_qdss.h>
 #include <linux/usb/msm_hsusb.h>
 
-#include "gadget_chips.h"
 #include "f_qdss.h"
 #include "u_qdss.c"
 
@@ -407,15 +406,10 @@ fail:
 
 static void qdss_unbind(struct usb_configuration *c, struct usb_function *f)
 {
-	struct f_qdss  *qdss = func_to_qdss(f);
-	struct usb_gadget *gadget = c->cdev->gadget;
-
 	pr_debug("qdss_unbind\n");
 
-	flush_workqueue(qdss->wq);
-
 	clear_eps(f);
-	clear_desc(gadget, f);
+	clear_desc(c->cdev->gadget, f);
 }
 
 static void qdss_eps_disable(struct usb_function *f)
@@ -826,8 +820,7 @@ void usb_qdss_close(struct usb_qdss_ch *ch)
 	ch->app_conn = 0;
 	spin_unlock_irqrestore(&d_lock, flags);
 
-	if (gadget_is_dwc3(gadget))
-		msm_dwc3_restart_usb_session(gadget);
+	msm_dwc3_restart_usb_session(gadget);
 }
 EXPORT_SYMBOL(usb_qdss_close);
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -46,11 +46,6 @@
 #include "smd_private.h"
 
 static int enable_debug;
-
-/* START : subsys_modem_restart : testmode */
-extern bool ignore_errors_by_subsys_modem_restart;
-/* END : subsys_modem_restart : testmode */
-
 module_param(enable_debug, int, S_IRUGO | S_IWUSR);
 
 /**
@@ -174,7 +169,7 @@ struct subsys_device {
 };
 
 #ifdef CONFIG_MACH_LGE
-static int modem_reboot_cnt;
+static int modem_reboot_cnt = 0;
 #endif
 
 static struct subsys_device *to_subsys(struct device *d)
@@ -490,21 +485,13 @@ static void subsystem_powerup(struct subsys_device *dev, void *data)
 #ifdef CONFIG_LGE_HANDLE_PANIC
 		lge_set_magic_subsystem(name, LGE_ERR_SUB_PWR);
 #endif
-		notify_each_subsys_device(&dev, 1, SUBSYS_POWERUP_FAILURE,
-								NULL);
 		panic("[%p]: Failed to powerup %s!", current, name);
 	}
 
 	ret = wait_for_err_ready(dev);
-	if (ret) {
-#ifdef CONFIG_LGE_HANDLE_PANIC
-		lge_set_magic_subsystem(name, LGE_ERR_SUB_PWR);
-#endif
-		notify_each_subsys_device(&dev, 1, SUBSYS_POWERUP_FAILURE,
-								NULL);
+	if (ret)
 		panic("[%p]: Timed out waiting for error ready: %s!",
 			current, name);
-	}
 	subsys_set_state(dev, SUBSYS_ONLINE);
 }
 
@@ -532,26 +519,19 @@ static int subsys_start(struct subsys_device *subsys)
 
 	init_completion(&subsys->err_ready);
 	ret = subsys->desc->start(subsys->desc);
-	if (ret){
-		notify_each_subsys_device(&subsys, 1, SUBSYS_POWERUP_FAILURE,
-									NULL);
+	if (ret)
 		return ret;
-	}
 
-	if (subsys->desc->is_not_loadable) {
-		subsys_set_state(subsys, SUBSYS_ONLINE);
+	if (subsys->desc->is_not_loadable)
 		return 0;
-	}
 
 	ret = wait_for_err_ready(subsys);
-	if (ret) {
+	if (ret)
 		/* pil-boot succeeded but we need to shutdown
 		 * the device because error ready timed out.
 		 */
-		notify_each_subsys_device(&subsys, 1, SUBSYS_POWERUP_FAILURE,
-									NULL);
 		subsys->desc->stop(subsys->desc);
-	} else
+	else
 		subsys_set_state(subsys, SUBSYS_ONLINE);
 
 	return ret;
@@ -615,8 +595,8 @@ void *subsystem_get(const char *name)
 			retval = ERR_PTR(ret);
 			goto err_start;
 		}
-		/*                                      
-                                    */
+		/* QCT Debug code for modem stuck issue,
+	 	 * secheol.pyo@lge.com, 2013-05-01*/
 		pr_info("[LGE Debug] subsys: %s get start %d by %d[%s]\n",
 			name, subsys->count,
 			current->pid, current->comm);
@@ -656,8 +636,8 @@ void subsystem_put(void *subsystem)
 			subsys->desc->name, __func__))
 		goto err_out;
 	if (!--subsys->count) {
-/*                                             
-                                  
+/* [LGE_S]QCT Debug code for modem stuck issue,
+ * secheol.pyo@lge.com, 2013-05-01
  */
 		pr_info("[LGE DEBUG]subsys: %s put stop %d by %d[%s]\n",
 			 subsys->desc->name, subsys->count,
@@ -671,13 +651,14 @@ void subsystem_put(void *subsystem)
 			subsys_stop(subsys);
 			if (subsys->do_ramdump_on_put)
 				subsystem_ramdump(subsys, NULL);
-		} else {
+		}
+		else {
 			pr_info("[LGE DEBUG]subsys: block modem put stop for stabilty\n");
 			subsys->count++;
 		}
 #endif
-/*                                             
-                                  
+/* [LGE_E]QCT Debug code for modem stuck issue,
+ * secheol.pyo@lge.com, 2013-05-01
  */
 	}
 	mutex_unlock(&track->lock);
@@ -867,7 +848,6 @@ int subsystem_restart(const char *name)
 }
 EXPORT_SYMBOL(subsystem_restart);
 
-/* START : subsys_modem_restart : testmode */
 /**
  * subsys_modem_restart() - modem restart silently
  *
@@ -892,7 +872,6 @@ int subsys_modem_restart(void)
 
 	rsl = dev->restart_level;
 	dev->restart_level = RESET_SUBSYS_COUPLED;
-	ignore_errors_by_subsys_modem_restart = true; //                         
 	ret = subsystem_restart_dev(dev);
 	dev->restart_level = rsl;
 	modem_reboot_cnt--;
@@ -901,7 +880,6 @@ int subsys_modem_restart(void)
 	return ret;
 }
 EXPORT_SYMBOL(subsys_modem_restart);
-/* END : subsys_modem_restart : testmode */
 
 int subsystem_crashed(const char *name)
 {
@@ -1067,8 +1045,8 @@ static void subsys_device_release(struct device *dev)
 static irqreturn_t subsys_err_ready_intr_handler(int irq, void *subsys)
 {
 	struct subsys_device *subsys_dev = subsys;
-	dev_info(subsys_dev->desc->dev,
-		"Subsystem error monitoring/handling services are up\n");
+	pr_info("Error ready interrupt occured for %s\n",
+		 subsys_dev->desc->name);
 
 	if (subsys_dev->desc->is_not_loadable)
 		return IRQ_HANDLED;

@@ -41,7 +41,6 @@
 #include <linux/cpu.h>
 #include <linux/notifier.h>
 #include <linux/rculist.h>
-#include <linux/irq_work.h>
 
 #include <asm/uaccess.h>
 
@@ -876,9 +875,9 @@ static int console_trylock_for_printk(unsigned int cpu)
 		}
 	}
 	printk_cpu = UINT_MAX;
-	raw_spin_unlock(&logbuf_lock);
 	if (wake)
 		up(&console_sem);
+	raw_spin_unlock(&logbuf_lock);
 	return retval;
 }
 static const char recursion_bug_msg [] =
@@ -1222,6 +1221,13 @@ module_param_named(console_suspend, console_suspend_enabled,
 MODULE_PARM_DESC(console_suspend, "suspend console during suspend"
 	" and hibernate operations");
 
+
+/* check current suspend/resume status of the console */
+int is_console_suspended(void)
+{
+	return console_suspended;
+}
+
 /**
  * suspend_console - suspend the console subsystem
  *
@@ -1346,32 +1352,30 @@ int is_console_locked(void)
 static DEFINE_PER_CPU(int, printk_pending);
 static DEFINE_PER_CPU(char [PRINTK_BUF_SIZE], printk_sched_buf);
 
-static void wake_up_klogd_work_func(struct irq_work *irq_work)
+void printk_tick(void)
 {
-	int pending = __this_cpu_xchg(printk_pending, 0);
-
-	if (pending & PRINTK_PENDING_SCHED) {
-		char *buf = __get_cpu_var(printk_sched_buf);
-		printk(KERN_WARNING "[sched_delayed] %s", buf);
+	if (__this_cpu_read(printk_pending)) {
+		int pending = __this_cpu_xchg(printk_pending, 0);
+		if (pending & PRINTK_PENDING_SCHED) {
+			char *buf = __get_cpu_var(printk_sched_buf);
+			printk(KERN_WARNING "[sched_delayed] %s", buf);
+		}
+		if (pending & PRINTK_PENDING_WAKEUP)
+			wake_up_interruptible(&log_wait);
 	}
-
-	if (pending & PRINTK_PENDING_WAKEUP)
-		wake_up_interruptible(&log_wait);
 }
 
-static DEFINE_PER_CPU(struct irq_work, wake_up_klogd_work) = {
-	.func = wake_up_klogd_work_func,
-	.flags = IRQ_WORK_LAZY,
-};
+int printk_needs_cpu(int cpu)
+{
+	if (cpu_is_offline(cpu))
+		printk_tick();
+	return __this_cpu_read(printk_pending);
+}
 
 void wake_up_klogd(void)
 {
-	preempt_disable();
-	if (waitqueue_active(&log_wait)) {
+	if (waitqueue_active(&log_wait))
 		this_cpu_or(printk_pending, PRINTK_PENDING_WAKEUP);
-		irq_work_queue(&__get_cpu_var(wake_up_klogd_work));
-	}
-	preempt_enable();
 }
 
 /**
@@ -1781,7 +1785,6 @@ int printk_sched(const char *fmt, ...)
 	va_end(args);
 
 	__this_cpu_or(printk_pending, PRINTK_PENDING_SCHED);
-	irq_work_queue(&__get_cpu_var(wake_up_klogd_work));
 	local_irq_restore(flags);
 
 	return r;

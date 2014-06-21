@@ -546,7 +546,6 @@ struct usb_gadget {
 	const char			*name;
 	struct device			dev;
 	u8				usb_core_id;
-	bool				l1_supported;
 	bool				streaming_enabled;
 };
 

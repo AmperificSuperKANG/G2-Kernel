@@ -66,27 +66,8 @@ static const struct mmc_fixup mmc_fixups[] = {
 	MMC_FIXUP_EXT_CSD_REV(CID_NAME_ANY, CID_MANFID_HYNIX,
 			      0x014a, add_quirk, MMC_QUIRK_BROKEN_HPI, 5),
 
-	/*
-	 * Some Hynix cards exhibit data corruption over reboots if cache is
-	 * enabled. Disable cache for all versions until a class of cards that
-	 * show this behavior is identified.
-	 */
-	MMC_FIXUP("H8G2d", CID_MANFID_HYNIX, CID_OEMID_ANY, add_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-
-	MMC_FIXUP("MMC16G", CID_MANFID_KINGSTON, CID_OEMID_ANY, add_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-
 	END_FIXUP
 };
-
-#ifdef CONFIG_ASYNC_FSYNC
-static unsigned int perf_degr;
-int emmc_perf_degr(void)
-{
-	return perf_degr;
-}
-#endif
 
 /*
  * Given the decoded CSD structure, decode the raw CID to our CID structure.
@@ -359,8 +340,6 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 	card->ext_csd.raw_card_type = ext_csd[EXT_CSD_CARD_TYPE];
 	mmc_select_card_type(card);
 
-	card->ext_csd.raw_drive_strength = ext_csd[EXT_CSD_DRIVE_STRENGTH];
-
 	card->ext_csd.raw_s_a_timeout = ext_csd[EXT_CSD_S_A_TIMEOUT];
 	card->ext_csd.raw_erase_timeout_mult =
 		ext_csd[EXT_CSD_ERASE_TIMEOUT_MULT];
@@ -625,9 +604,9 @@ static int mmc_compare_ext_csds(struct mmc_card *card, unsigned bus_width)
 
 	if (err || bw_ext_csd == NULL) {
 		#ifdef CONFIG_MACH_LGE
-		/*                                      
-                                                
-  */
+		/* LGE_CHANGE, 2013-04-19, G2-FS@lge.com
+		* Adding Print, Requested by QMC-CASE-01158823
+		*/
 		pr_err("%s: %s: 0x%x, 0x%x\n", mmc_hostname(card->host), __func__, err, bw_ext_csd ? *bw_ext_csd : 0x0);
 		#endif
 		if (bus_width != MMC_BUS_WIDTH_1)
@@ -675,9 +654,9 @@ static int mmc_compare_ext_csds(struct mmc_card *card, unsigned bus_width)
 			bw_ext_csd[EXT_CSD_SEC_CNT + 3]));
 
 	#ifdef CONFIG_MACH_LGE
-		/*                                      
-                                                
-  */
+		/* LGE_CHANGE, 2013-04-19, G2-FS@lge.com
+		* Adding Print, Requested by QMC-CASE-01158823
+		*/
 		if (err) {
 		pr_err("%s: %s: fail during compare, err = 0x%x\n", mmc_hostname(card->host), __func__, err);
 		err = -EINVAL;
@@ -691,8 +670,8 @@ out:
 	mmc_free_ext_csd(bw_ext_csd);
 	return err;
 }
-#if defined(CONFIG_MACH_MSM8974_G2_OPEN_COM) || defined(CONFIG_MACH_MSM8974_G2_OPT_AU)
-MMC_DEV_ATTR(capacity, "%02x%02x%02x%02x\n", card->ext_csd.raw_sectors[3], card->ext_csd.raw_sectors[2], card->ext_csd.raw_sectors[1], card->ext_csd.raw_sectors[0]);
+#ifdef CONFIG_MACH_MSM8974_G2_OPEN_COM
+MMC_DEV_ATTR(capacity, "%02x%02x%02x%02x\n", card->ext_csd.raw_sectors[3],card->ext_csd.raw_sectors[2],card->ext_csd.raw_sectors[1],card->ext_csd.raw_sectors[0]);
 #endif
 MMC_DEV_ATTR(cid, "%08x%08x%08x%08x\n", card->raw_cid[0], card->raw_cid[1],
 	card->raw_cid[2], card->raw_cid[3]);
@@ -714,7 +693,7 @@ MMC_DEV_ATTR(raw_rpmb_size_mult, "%#x\n", card->ext_csd.raw_rpmb_size_mult);
 MMC_DEV_ATTR(rel_sectors, "%#x\n", card->ext_csd.rel_sectors);
 
 static struct attribute *mmc_std_attrs[] = {
-#if defined(CONFIG_MACH_MSM8974_G2_OPEN_COM) || defined(CONFIG_MACH_MSM8974_G2_OPT_AU)
+#ifdef CONFIG_MACH_MSM8974_G2_OPEN_COM
 	&dev_attr_capacity.attr,
 #endif
 	&dev_attr_cid.attr,
@@ -813,9 +792,9 @@ static int mmc_select_powerclass(struct mmc_card *card,
 		break;
 	default:
 		#ifdef CONFIG_MACH_LGE
-		/*                                      
-                                                
-  */
+		/* LGE_CHANGE, 2013-04-19, G2-FS@lge.com
+		* Adding Print, Requested by QMC-CASE-01158823
+		*/
 		pr_err("%s: %s: Voltage range not supported for power class, host->ios.vdd = 0x%x\n", mmc_hostname(host), __func__, host->ios.vdd);
 		#else
 		pr_warning("%s: Voltage range not supported "
@@ -1239,9 +1218,9 @@ int mmc_set_clock_bus_speed(struct mmc_card *card, unsigned long freq)
 		mmc_set_timing(card->host, MMC_TIMING_LEGACY);
 		mmc_set_clock(card->host, MMC_HIGH_26_MAX_DTR);
 
-		err = mmc_select_hs(card, card->cached_ext_csd);
+		err = mmc_select_hs(card, &card->cached_ext_csd);
 	} else {
-		err = mmc_select_hs400(card, card->cached_ext_csd);
+		err = mmc_select_hs400(card, &card->cached_ext_csd);
 	}
 
 	return err;
@@ -1297,7 +1276,8 @@ static int mmc_change_bus_speed(struct mmc_host *host, unsigned long *freq)
 		mmc_set_clock(host, (unsigned int) (*freq));
 	}
 
-	if (mmc_card_hs200(card) && card->host->ops->execute_tuning) {
+	if ((mmc_card_hs400(card) || mmc_card_hs200(card))
+		&& card->host->ops->execute_tuning) {
 		/*
 		 * We try to probe host driver for tuning for any
 		 * frequency, it is host driver responsibility to
@@ -1488,7 +1468,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 		err = mmc_get_ext_csd(card, &ext_csd);
 		if (err)
 			goto free_card;
-		card->cached_ext_csd = ext_csd;
+		memcpy(&card->cached_ext_csd, ext_csd, sizeof(card->ext_csd));
 		err = mmc_read_ext_csd(card, ext_csd);
 		if (err)
 			goto free_card;
@@ -1606,8 +1586,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	 * If HPI is not supported then cache shouldn't be enabled.
 	 */
 	if ((host->caps2 & MMC_CAP2_CACHE_CTRL) &&
-	    (card->ext_csd.cache_size > 0) && card->ext_csd.hpi_en &&
-	    ((card->quirks & MMC_QUIRK_CACHE_DISABLE) == 0)) {
+	    (card->ext_csd.cache_size > 0) && card->ext_csd.hpi_en) {
 		err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
 				EXT_CSD_CACHE_CTRL, 1,
 				card->ext_csd.generic_cmd6_time);
@@ -1626,11 +1605,6 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 		} else {
 			card->ext_csd.cache_ctrl = 1;
 		}
-	}
-	if (card->quirks & MMC_QUIRK_CACHE_DISABLE) {
-		pr_warn("%s: This is Hynix card, cache disabled!\n",
-				mmc_hostname(card->host));
-		card->ext_csd.cache_ctrl = 0;
 	}
 
 	if ((host->caps2 & MMC_CAP2_PACKED_WR &&
@@ -1692,12 +1666,15 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	if (!oldcard)
 		host->card = card;
 
+	mmc_free_ext_csd(ext_csd);
 	return 0;
 
 free_card:
 	if (!oldcard)
 		mmc_remove_card(card);
 err:
+	mmc_free_ext_csd(ext_csd);
+
 	return err;
 }
 
@@ -1755,12 +1732,11 @@ static void mmc_remove(struct mmc_host *host)
 	BUG_ON(!host->card);
 
 	unregister_reboot_notifier(&host->card->reboot_notify);
-
-	mmc_exit_clk_scaling(host);
 	mmc_remove_card(host->card);
 
 	mmc_claim_host(host);
 	host->card = NULL;
+	mmc_exit_clk_scaling(host);
 	mmc_release_host(host);
 }
 

@@ -171,7 +171,3 @@
 &usb3 {
 	qcom,skip-charger-detection;
 };
-
-&ufs1 {
-	status = "ok";
-};

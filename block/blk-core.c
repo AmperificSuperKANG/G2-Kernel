@@ -32,7 +32,7 @@
 #include <linux/ratelimit.h>
 #include <linux/pm_runtime.h>
 
-/* #define CREATE_TRACE_POINTS */
+#define CREATE_TRACE_POINTS
 #include <trace/events/block.h>
 
 #include "blk.h"
@@ -2235,7 +2235,7 @@ bool blk_update_request(struct request *req, int error, unsigned int nr_bytes)
 	if (!req->bio)
 		return false;
 
-	trace_block_rq_complete(req->q, req, nr_bytes);
+	trace_block_rq_complete(req->q, req);
 
 	/*
 	 * For fs requests, rq is just carrier of independent bio's

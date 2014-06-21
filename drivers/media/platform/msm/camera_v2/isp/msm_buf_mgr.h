@@ -44,11 +44,6 @@ struct msm_isp_buffer_mapped_info {
 	struct ion_handle *handle;
 };
 
-struct buffer_cmd {
-	struct list_head list;
-	struct msm_isp_buffer_mapped_info *mapped_info;
-};
-
 struct msm_isp_buffer {
 	/*Common Data structure*/
 	int num_planes;
@@ -113,7 +108,7 @@ struct msm_isp_buf_ops {
 
 	int (*buf_done) (struct msm_isp_buf_mgr *buf_mgr,
 		uint32_t bufq_handle, uint32_t buf_index,
-		struct timeval *tv, uint32_t frame_id, uint32_t output_format);
+		struct timeval *tv, uint32_t frame_id);
 	int (*buf_divert) (struct msm_isp_buf_mgr *buf_mgr,
 		uint32_t bufq_handle, uint32_t buf_index,
 		struct timeval *tv, uint32_t frame_id);
@@ -143,7 +138,6 @@ struct msm_isp_buf_mgr {
 
 	int num_iommu_ctx;
 	struct device *iommu_ctx[2];
-	struct list_head buffer_q;
 };
 
 int msm_isp_create_isp_buf_mgr(struct msm_isp_buf_mgr *buf_mgr,

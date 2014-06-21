@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -619,7 +619,6 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 	unsigned int rcmd_gpu;
 	unsigned int context_id;
 	unsigned int gpuaddr = rb->device->memstore.gpuaddr;
-	bool profile_ready;
 
 	if (drawctxt != NULL && kgsl_context_detached(&drawctxt->base))
 		return -EINVAL;
@@ -643,18 +642,6 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 	if (drawctxt)
 		drawctxt->internal_timestamp = rb->global_ts;
 
-	/*
-	 * If in stream ib profiling is enabled and there are counters
-	 * assigned, then space needs to be reserved for profiling.  This
-	 * space in the ringbuffer is always consumed (might be filled with
-	 * NOPs in error case.  profile_ready needs to be consistent through
-	 * the _addcmds call since it is allocating additional ringbuffer
-	 * command space.
-	 */
-	profile_ready = !adreno_is_a2xx(adreno_dev) && drawctxt &&
-		adreno_profile_assignments_ready(&adreno_dev->profile) &&
-		!(flags & KGSL_CMD_FLAGS_INTERNAL_ISSUE);
-
 	/* reserve space to temporarily turn off protected mode
 	*  error checking if needed
 	*/
@@ -665,11 +652,15 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 	total_sizedwords += (flags & KGSL_CMD_FLAGS_INTERNAL_ISSUE) ? 2 : 0;
 
 	/* Add two dwords for the CP_INTERRUPT */
-	total_sizedwords +=
-		(drawctxt || (flags & KGSL_CMD_FLAGS_INTERNAL_ISSUE)) ?  2 : 0;
+	total_sizedwords += drawctxt ? 2 : 0;
 
+	/* context rollover */
 	if (adreno_is_a3xx(adreno_dev))
-		total_sizedwords += 7;
+		total_sizedwords += 3;
+
+	/* For HLSQ updates below */
+	if (adreno_is_a4xx(adreno_dev) || adreno_is_a3xx(adreno_dev))
+		total_sizedwords += 4;
 
 	if (adreno_is_a2xx(adreno_dev))
 		total_sizedwords += 2; /* CP_WAIT_FOR_IDLE */
@@ -690,9 +681,6 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 
 	if (flags & KGSL_CMD_FLAGS_WFI)
 		total_sizedwords += 2; /* WFI */
-
-	if (profile_ready)
-		total_sizedwords += 6;   /* space for pre_ib and post_ib */
 
 	/* Add space for the power on shader fixup if we need it */
 	if (flags & KGSL_CMD_FLAGS_PWRON_FIXUP)
@@ -728,11 +716,6 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 		GSL_RB_WRITE(rb->device, ringcmds, rcmd_gpu,
 			adreno_dev->pwron_fixup_dwords);
 	}
-
-	/* Add any IB required for profiling if it is enabled */
-	if (profile_ready)
-		adreno_profile_preib_processing(rb->device, context_id,
-				&flags, &ringcmds, &rcmd_gpu);
 
 	/* start-of-pipeline timestamp */
 	GSL_RB_WRITE(rb->device, ringcmds, rcmd_gpu,
@@ -770,7 +753,7 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 		GSL_RB_WRITE(rb->device, ringcmds, rcmd_gpu, 0x00);
 	}
 
-	if (adreno_is_a3xx(adreno_dev)) {
+	if (adreno_is_a3xx(adreno_dev) || adreno_is_a4xx(adreno_dev)) {
 		/*
 		 * Flush HLSQ lazy updates to make sure there are no
 		 * resources pending for indirect loads after the timestamp
@@ -784,12 +767,6 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 			cp_type3_packet(CP_WAIT_FOR_IDLE, 1));
 		GSL_RB_WRITE(rb->device, ringcmds, rcmd_gpu, 0x00);
 	}
-
-	/* Add any postIB required for profiling if it is enabled and has
-	   assigned counters */
-	if (profile_ready)
-		adreno_profile_postib_processing(rb->device, &flags,
-						 &ringcmds, &rcmd_gpu);
 
 	/*
 	 * end-of-pipeline timestamp.  If per context timestamps is not
@@ -1104,6 +1081,9 @@ adreno_ringbuffer_issueibcmds(struct kgsl_device_private *dev_priv,
 			return -EINVAL;
 	}
 
+	/* For now everybody has the same priority */
+	cmdbatch->priority = ADRENO_CONTEXT_DEFAULT_PRIORITY;
+
 	/* wait for the suspend gate */
 	wait_for_completion(&device->cmdbatch_gate);
 
@@ -1119,8 +1099,24 @@ adreno_ringbuffer_issueibcmds(struct kgsl_device_private *dev_priv,
 		timestamp);
 
 	if (ret)
-		KGSL_DRV_ERR(device,
-			"adreno_dispatcher_queue_cmd returned %d\n", ret);
+		KGSL_DRV_ERR(device, "adreno_context_queue_cmd returned %d\n",
+				ret);
+	else {
+		/*
+		 * only call trace_gpu_job_enqueue for actual commands - dummy
+		 * sync command batches won't get scheduled on the GPU
+		 */
+
+		if (!(cmdbatch->flags & KGSL_CONTEXT_SYNC)) {
+			const char *str = "3D";
+			if (drawctxt->type == KGSL_CONTEXT_TYPE_CL ||
+				drawctxt->type == KGSL_CONTEXT_TYPE_RS)
+				str = "compute";
+
+			kgsl_trace_gpu_job_enqueue(drawctxt->base.id,
+				cmdbatch->timestamp, str);
+		}
+	}
 
 	/*
 	 * Return -EPROTO if the device has faulted since the last time we
@@ -1130,67 +1126,6 @@ adreno_ringbuffer_issueibcmds(struct kgsl_device_private *dev_priv,
 		ret = -EPROTO;
 
 	return ret;
-}
-
-unsigned int adreno_ringbuffer_get_constraint(struct kgsl_device *device,
-				struct kgsl_context *context)
-{
-	unsigned int pwrlevel = device->pwrctrl.active_pwrlevel;
-
-	switch (context->pwr_constraint.type) {
-	case KGSL_CONSTRAINT_PWRLEVEL: {
-		switch (context->pwr_constraint.sub_type) {
-		case KGSL_CONSTRAINT_PWR_MAX:
-			pwrlevel = device->pwrctrl.max_pwrlevel;
-			break;
-		case KGSL_CONSTRAINT_PWR_MIN:
-			pwrlevel = device->pwrctrl.min_pwrlevel;
-			break;
-		default:
-			break;
-		}
-	}
-	break;
-
-	}
-
-	return pwrlevel;
-}
-
-void adreno_ringbuffer_set_constraint(struct kgsl_device *device,
-			struct kgsl_cmdbatch *cmdbatch)
-{
-	unsigned int constraint;
-	struct kgsl_context *context = cmdbatch->context;
-	/*
-	 * Check if the context has a constraint and constraint flags are
-	 * set.
-	 */
-	if (context->pwr_constraint.type &&
-		((context->flags & KGSL_CONTEXT_PWR_CONSTRAINT) ||
-			(cmdbatch->flags & KGSL_CONTEXT_PWR_CONSTRAINT))) {
-
-		constraint = adreno_ringbuffer_get_constraint(device, context);
-
-		/*
-		 * If a constraint is already set, set a new
-		 * constraint only if it is faster
-		 */
-		if ((device->pwrctrl.constraint.type ==
-			KGSL_CONSTRAINT_NONE) || (constraint <
-			device->pwrctrl.constraint.hint.pwrlevel.level)) {
-
-			kgsl_pwrctrl_pwrlevel_change(device, constraint);
-			device->pwrctrl.constraint.type =
-					context->pwr_constraint.type;
-			device->pwrctrl.constraint.hint.
-					pwrlevel.level = constraint;
-		}
-
-		device->pwrctrl.constraint.expires = jiffies +
-			device->pwrctrl.interval_timeout;
-	}
-
 }
 
 /* adreno_rindbuffer_submitcmd - submit userspace IBs to the GPU */
@@ -1214,9 +1149,6 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 
 	ibdesc = cmdbatch->ibdesc;
 	numibs = cmdbatch->ibcount;
-
-	/* process any profiling results that are available into the log_buf */
-	adreno_profile_process_results(device);
 
 	/*When preamble is enabled, the preamble buffer with state restoration
 	commands are stored in the first node of the IB chain. We can skip that
@@ -1302,9 +1234,6 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 	if (test_and_clear_bit(ADRENO_DEVICE_PWRON, &adreno_dev->priv) &&
 		test_bit(ADRENO_DEVICE_PWRON_FIXUP, &adreno_dev->priv))
 		flags |= KGSL_CMD_FLAGS_PWRON_FIXUP;
-
-	/* Set the constraints before adding to ringbuffer */
-	adreno_ringbuffer_set_constraint(device, cmdbatch);
 
 	ret = adreno_ringbuffer_addcmds(&adreno_dev->ringbuffer,
 					drawctxt,

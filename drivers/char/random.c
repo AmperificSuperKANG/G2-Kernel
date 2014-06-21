@@ -298,7 +298,7 @@
  * The minimum number of bits of entropy before we wake up a read on
  * /dev/random.  Should be enough to do a significant reseed.
  */
-static int random_read_wakeup_thresh = 1024;
+static int random_read_wakeup_thresh = 64;
 
 /*
  * If the entropy count falls under this number of bits, then we
@@ -484,7 +484,7 @@ static __u32 const twist_table[8] = {
  * the entropy is concentrated in the low-order bits.
  */
 static void _mix_pool_bytes(struct entropy_store *r, const void *in,
-				   int nbytes, __u8 out[64])
+			    int nbytes, __u8 out[64])
 {
 	unsigned long i, j, tap1, tap2, tap3, tap4, tap5;
 	int input_rotate;
@@ -824,8 +824,6 @@ static void add_timer_randomness(struct timer_rand_state *state, unsigned num)
 void add_input_randomness(unsigned int type, unsigned int code,
 				 unsigned int value)
 {
-/* random: prevent add_input from doing anything */
-#if 0
 	static unsigned char last_value;
 
 	/* ignore autorepeat and the like */
@@ -836,8 +834,6 @@ void add_input_randomness(unsigned int type, unsigned int code,
 	add_timer_randomness(&input_timer_state,
 			     (type << 4) ^ code ^ (code >> 4) ^ value);
 	trace_add_input_randomness(ENTROPY_BITS(&input_pool));
-#endif
-	return;
 }
 EXPORT_SYMBOL_GPL(add_input_randomness);
 
@@ -1249,7 +1245,6 @@ static void init_std_data(struct entropy_store *r)
 		if (!arch_get_random_long(&rv))
 			rv = random_get_entropy();
 		mix_pool_bytes(r, &rv, sizeof(rv), NULL);
-
 	}
 	mix_pool_bytes(r, utsname(), sizeof(*(utsname())), NULL);
 }
@@ -1264,7 +1259,6 @@ static void init_std_data(struct entropy_store *r)
  * take care not to overwrite the precious per platform data
  * we were given.
  */
-
 static int rand_initialize(void)
 {
 	init_std_data(&input_pool);
@@ -1294,12 +1288,6 @@ void rand_initialize_disk(struct gendisk *disk)
 static ssize_t
 random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
-/*
-random: entropy tweaks are all the rage nowadays
-use nonblocking for all.  Read this web page:
-http://lwn.net/Articles/489734/ - WIP
-*/
-#if 0
 	ssize_t n, retval = 0, count = 0;
 
 	if (nbytes == 0)
@@ -1347,8 +1335,6 @@ http://lwn.net/Articles/489734/ - WIP
 	}
 
 	return (count ? count : retval);
-#endif
-	return extract_entropy_user(&nonblocking_pool, buf, nbytes);
 }
 
 static ssize_t
