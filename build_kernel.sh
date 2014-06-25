@@ -20,7 +20,7 @@ clear
 #------LG-G2-D802-Ramdisk/		(ramdisk files for boot.img)
 #------ramdisk-tmp/			(ramdisk tmp store without .git)
 #--------lib/modules/			(modules dir, will be added to system on boot)
-#------dorimanx-LG-G2-D802-Kernel/	(kernel source goes here)
+#------askp-LG-G2-D802-Kernel/	(kernel source goes here)
 #--------READY-KERNEL/			(output directory, where the final boot.img is placed)
 #----------meta-inf/			(meta-inf folder for your flashable zip)
 #----------system/
@@ -56,40 +56,46 @@ BUILD_800=0
 BUILD_801=0
 BUILD_802=0
 BUILD_803=0
+BUILD_320=0
 BUILD_LS_980=0
 BUILD_VS_980=0
 
 echo "What to cook for you?!";
-select CHOICE in D800 D801 D802 D803 LS980 VS980; do
+select CHOICE in D800 D801 D802 D803 F320 LS980 VS980; do
 	case "$CHOICE" in
 		"D800")
-			export KERNEL_CONFIG=dorimanx_d800_defconfig
-			KERNEL_CONFIG_FILE=dorimanx_d800_defconfig
+			export KERNEL_CONFIG=askp_d800_defconfig
+			KERNEL_CONFIG_FILE=askp_d800_defconfig
 			BUILD_800=1;
 			break;;
 		"D801")
-			export KERNEL_CONFIG=dorimanx_d801_defconfig
-			KERNEL_CONFIG_FILE=dorimanx_d801_defconfig
+			export KERNEL_CONFIG=askp_d801_defconfig
+			KERNEL_CONFIG_FILE=askp_d801_defconfig
 			BUILD_801=1;
 			break;;
 		"D802")
-			export KERNEL_CONFIG=dorimanx_d802_defconfig
-			KERNEL_CONFIG_FILE=dorimanx_d802_defconfig
+			export KERNEL_CONFIG=askp_d802_defconfig
+			KERNEL_CONFIG_FILE=askp_d802_defconfig
 			BUILD_802=1;
 			break;;
 		"D803")
-			export KERNEL_CONFIG=dorimanx_d803_defconfig
-			KERNEL_CONFIG_FILE=dorimanx_d803_defconfig
+			export KERNEL_CONFIG=askp_d803_defconfig
+			KERNEL_CONFIG_FILE=askp_d803_defconfig
 			BUILD_803=1
 			break;;
+		"F320")
+			export KERNEL_CONFIG=askp_f320_defconfig
+			KERNEL_CONFIG_FILE=askp_f320_defconfig
+			BUILD_320=1;
+			break;;
 		"LS980")
-			export KERNEL_CONFIG=dorimanx_ls980_defconfig
-			KERNEL_CONFIG_FILE=dorimanx_ls980_defconfig
+			export KERNEL_CONFIG=askp_ls980_defconfig
+			KERNEL_CONFIG_FILE=askp_ls980_defconfig
 			BUILD_LS_980=1;
 			break;;
 		"VS980")
-			export KERNEL_CONFIG=dorimanx_vs980_defconfig
-			KERNEL_CONFIG_FILE=dorimanx_vs980_defconfig
+			export KERNEL_CONFIG=askp_vs980_defconfig
+			KERNEL_CONFIG_FILE=askp_vs980_defconfig
 			BUILD_VS_980=1;
 			break;;
 	esac;
@@ -104,17 +110,19 @@ fi;
 echo "Compiling Kernel.............";
 if [ ! -f "$KERNELDIR"/.config ]; then
 	if [ "$BUILD_800" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_d800_defconfig .config
+		cp arch/arm/configs/askp_d800_defconfig .config
 	elif [ "$BUILD_801" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_d801_defconfig .config
+		cp arch/arm/configs/askp_d801_defconfig .config
 	elif [ "$BUILD_802" -eq "1" ]; then
 		sh load_config-802.sh
 	elif [ "$BUILD_803" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_d803_defconfig .config
+		cp arch/arm/configs/askp_d803_defconfig .config
+	elif [ "$BUILD_320" -eq "1" ]; then
+		cp arch/arm/configs/askp_f320_defconfig .config
 	elif [ "$BUILD_LS_980" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_ls980_defconfig .config
+		cp arch/arm/configs/askp_ls980_defconfig .config
 	elif [ "$BUILD_VS_980" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_vs980_defconfig .config
+		cp arch/arm/configs/askp_vs980_defconfig .config
 	fi;
 fi;
 
@@ -123,31 +131,35 @@ if [ -f "$KERNELDIR"/.config ]; then
 	BRANCH_801=$(grep -R "CONFIG_MACH_MSM8974_G2_TMO_US=y" .config | wc -l)
 	BRANCH_802=$(grep -R "CONFIG_MACH_MSM8974_G2_OPEN_COM=y" .config | wc -l)
 	BRANCH_803=$(grep -R "CONFIG_MACH_MSM8974_G2_CA=y" .config | wc -l)
+	BRANCH_320=$(grep -R "CONFIG_MACH_MSM8974_G2_KR=y" .config | wc -l)
 	BRANCH_LS_980=$(grep -R "CONFIG_MACH_MSM8974_G2_SPR=y" .config | wc -l)
 	BRANCH_VS_980=$(grep -R "CONFIG_MACH_MSM8974_G2_VZW=y" .config | wc -l)
 	if [ "$BRANCH_800" -eq "0" ] && [ "$BUILD_800" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_d800_defconfig .config
+		cp arch/arm/configs/askp_d800_defconfig ./.config
 	fi;
 	if [ "$BRANCH_801" -eq "0" ] && [ "$BUILD_801" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_d801_defconfig .config
+		cp arch/arm/configs/askp_d801_defconfig ./.config
 	fi;
 	if [ "$BRANCH_802" -eq "0" ] && [ "$BUILD_802" -eq "1" ]; then
-		sh load_config-802.sh
+		cp arch/arm/configs/askp_d802_defconfig ./.config
 	fi;
 	if [ "$BRANCH_803" -eq "0" ] && [ "$BUILD_803" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_d803_defconfig .config
+		cp arch/arm/configs/askp_d803_defconfig ./.config
+	fi;
+	if [ "$BRANCH_320" -eq "0" ] && [ "$BUILD_320" -eq "1" ]; then
+		cp arch/arm/configs/askp_f320_defconfig ./.config
 	fi;
 	if [ "$BRANCH_LS_980" -eq "0" ] && [ "$BUILD_LS_980" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_ls980_defconfig .config
+		cp arch/arm/configs/askp_ls980_defconfig ./.config
 	fi;
 	if [ "$BRANCH_VS_980" -eq "0" ] && [ "$BUILD_VS_980" -eq "1" ]; then
-		cp arch/arm/configs/dorimanx_vs980_defconfig .config
+		cp arch/arm/configs/askp_vs980_defconfig ./.config
 	fi;
 fi;
 
 # get version from config
 GETVER=$(grep 'Kernel-.*-V' .config |sed 's/Kernel-//g' | sed 's/.*".//g' | sed 's/-L.*//g');
-GETBRANCH=$(grep '.*-LG' .config |sed 's/Kernel-Dorimanx-V//g' | sed 's/[1-9].*-LG-//g' | sed 's/.*".//g' | sed 's/-PWR.*//g');
+GETBRANCH=$(grep '.*-LG' .config |sed 's/Kernel-askp-V//g' | sed 's/[1-9].*-LG-//g' | sed 's/.*".//g' | sed 's/-PWR.*//g');
 
 cp "$KERNELDIR"/.config "$KERNELDIR"/arch/arm/configs/"$KERNEL_CONFIG_FILE";
 
@@ -156,13 +168,19 @@ for i in $(find "$KERNELDIR"/ -name "*.ko"); do
         rm -f "$i";
 done;
 
-# dorimanx detection ;)
-if [ "$HOST" == "dorimanx-virtual-machine" ] || [ "$HOST" == "dorimanx" ]; then
-	NR_CPUS=16;
-	echo "Dori power detected!";
+# Copy needed dtc binary to system to finish the build.
+if [ ! -e /bin/dtc ]; then
+	cp -a tools/dtc-binary/dtc /bin/;
+fi;
+
+# Idea by savoca
+NR_CPUS=$(grep -c ^processor /proc/cpuinfo)
+
+if [ "$NR_CPUS" -le "2" ]; then
+	NR_CPUS=4;
+	echo "Building kernel with 4 CPU threads";
 else
-	NR_CPUS=4
-        echo "not dorimanx system detected, setting $NR_CPUS build threads"
+	echo "Building kernel with $NR_CPUS CPU threads";
 fi;
 
 # build zImage
@@ -179,8 +197,43 @@ time make modules -j ${NR_CPUS} || exit 1
 # move the compiled zImage and modules into the READY-KERNEL working directory
 echo "Move compiled objects........"
 
-cp -a ../LG-G2-D802-Ramdisk/* ../ramdisk-tmp/
-rm -rf ../ramdisk-tmp/.git
+# Check that RAMDISK is for this Branch. and check if need to push changes before switch to needed branch.
+
+RAMDISK_BRANCH=$(git -C ../LG-G2-D802-Ramdisk/ commit | grep "origin/kitkat-ramdisk" | wc -l);
+RAMDISK_NOT_SAVED=$(git -C ../LG-G2-D802-Ramdisk/ commit | grep "Changes not staged for commit" | wc -l);
+
+if [ "$RAMDISK_BRANCH" == "1" ]; then
+	echo "Ram Disk is in the right branch!";
+else
+	if [ "$RAMDISK_NOT_SAVED" != "1" ]; then
+		git -C ../LG-G2-D802-Ramdisk/ checkout kitkat-ramdisk;
+		echo -e "\e[1;31mRamDisk Switched to kitkat-ramdisk Branch!\e[m"
+	else
+		echo -e "\e[1;31mRamDisk has to be SAVED (commited) before switching to kitkat-ramdisk Branch\e[m";
+		echo -e "\e[1;31mKernel Build Script exit! please (commit/Reset changes) and build again.\e[m";
+		exit 1;
+	fi;
+fi;
+
+# copy all ROOT ramdisk files to ramdisk temp dir.
+cp -a ../LG-G2-D802-Ramdisk/ROOT-RAMDISK/* ../ramdisk-tmp/
+
+# copy needed branch files to ramdisk temp dir.
+if [ "$BUILD_800" == "1" ]; then
+	cp -a ../LG-G2-D802-Ramdisk/D800-RAMDISK/* ../ramdisk-tmp/
+elif [ "$BUILD_801" == "1" ]; then
+	cp -a ../LG-G2-D802-Ramdisk/D801-RAMDISK/* ../ramdisk-tmp/
+elif [ "$BUILD_802" == "1" ]; then
+	cp -a ../LG-G2-D802-Ramdisk/D802-RAMDISK/* ../ramdisk-tmp/
+elif [ "$BUILD_803" == "1" ]; then
+	cp -a ../LG-G2-D802-Ramdisk/D803-RAMDISK/* ../ramdisk-tmp/
+elif [ "$BUILD_320" == "1" ]; then
+	cp -a ../LG-G2-D802-Ramdisk/F320-RAMDISK/* ../ramdisk-tmp/
+elif [ "$BUILD_LS_980" == "1" ]; then
+	cp -a ../LG-G2-D802-Ramdisk/LS980-RAMDISK/* ../ramdisk-tmp/
+elif [ "$BUILD_VS_980" == "1" ]; then
+	cp -a ../LG-G2-D802-Ramdisk/VS980-RAMDISK/* ../ramdisk-tmp/
+fi;
 
 for i in $(find "$KERNELDIR" -name '*.ko'); do
         cp -av "$i" ../ramdisk-tmp/lib/modules/;
@@ -232,7 +285,7 @@ if [ -e "$KERNELDIR"/arch/arm/boot/zImage ]; then
 
 	# create the flashable zip file from the contents of the output directory
 	echo "Make flashable zip..........."
-	zip -r Kernel-"${GETVER}"-"$(date +"[%H-%M]-[%d-%m]-LG-${GETBRANCH}-PWR-CORE")".zip * >/dev/null
+	zip -r ASKP-"${GETVER}"-"$(date +"[%d-%m]")".zip * >/dev/null
 	stat boot.img
 	rm -f ./*.img
 	cd ..
@@ -245,4 +298,3 @@ else
 	# with red-color
 	 echo -e "\e[1;31mKernel STUCK in BUILD! no zImage exist\e[m"
 fi;
-
