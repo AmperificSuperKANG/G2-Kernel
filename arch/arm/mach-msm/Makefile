@@ -34,10 +34,9 @@ obj-$(CONFIG_ARCH_MSM_SCORPIONMP) += perf_event_msm_l2.o
 ifndef CONFIG_OF
 obj-$(CONFIG_HW_PERF_EVENTS) += pmu.o
 endif
-obj-$(CONFIG_ARCH_MSM_KRAIT) += msm-krait-l2-accessors.o
+obj-$(CONFIG_ARCH_MSM_KRAIT) += msm-krait-l2-accessors.o perf_event_msm_krait_l2.o
 obj-$(CONFIG_ARCH_MSM_KRAIT) += krait-scm.o
 ifdef CONFIG_HW_PERF_EVENTS
-obj-$(CONFIG_ARCH_MSM_KRAIT) += perf_event_msm_krait_l2.o
 obj-$(CONFIG_ARCH_MSM7X27A) += perf_event_msm_pl310.o
 obj-$(CONFIG_ARCH_MSM9625) += perf_event_msm_pl310.o
 obj-$(CONFIG_ARCH_MSM8625) += perf_event_msm_pl310.o
@@ -444,4 +443,3 @@ obj-y += lge_moca_drv.o
 obj-$(CONFIG_ARCH_MSM8974) += moca_kernel_probe.o
 obj-$(CONFIG_PERFMAP) += perfmap.o
 obj-$(CONFIG_ARCH_MSM8974) += cpubw-krait.o
-obj-$(CONFIG_HAS_MACH_MEMUTILS) += memutils/
